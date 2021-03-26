@@ -5,7 +5,7 @@ Map Editor Tool Set for Stronghold (in the future) and Stronghold Crusader
 Make your custom maps symmetrical by mirroring every action in the map editor.
 
 ## Installation instructions
-1. Download the correct files for your version of Stronghold (currently only Stronghold Crusader 1.41 is supported)
+1. Download the files from this repository for your version of Stronghold (currently only Stronghold Crusader 1.41 is supported)
 2. Rename the existing `binkw32.dll` in your game folder to `binkw32_real.dll`
 3. Move the files from the zip file (`binkw32.dll, lua54.dll, shc-mapeditortools.lua`) to your game folder
 
