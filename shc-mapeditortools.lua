@@ -6,9 +6,9 @@ function applyMirrors(x, y, size)
   if MIRROR_MODE ~= "off" then
     table.insert(coordlist, applyMirror(x, y, size, MIRROR_MODE))
     if MIRROR_MODE2 ~= "off" then
-	    table.insert(coordlist, applyMirror(x, y, size, MIRROR_MODE2))
-	    table.insert(coordlist, applyMirror(coordlist[2][1], coordlist[2][2], size, MIRROR_MODE2))
-	  end
+      table.insert(coordlist, applyMirror(x, y, size, MIRROR_MODE2))
+      table.insert(coordlist, applyMirror(coordlist[2][1], coordlist[2][2], size, MIRROR_MODE2))
+    end
   end
   return coordlist
 end
@@ -88,7 +88,7 @@ function transformTerrain(x, y, brush, change)
   
   for k,coordpair in ipairs(coordinatelist) do
     table.insert(coordpair, brush)
-	  table.insert(coordpair, change)
+    table.insert(coordpair, change)
   end
   
   return coordinatelist
@@ -99,8 +99,8 @@ function setTerrainType(x, y, brush, terrainType, unknown)
   
   for k,coordpair in ipairs(coordinatelist) do
     table.insert(coordpair, brush)
-	  table.insert(coordpair, terrainType)
-	  table.insert(coordpair, unknown)
+    table.insert(coordpair, terrainType)
+    table.insert(coordpair, unknown)
   end
   
   return coordinatelist
