@@ -1,4 +1,79 @@
 
+-- ///////////////
+-- // help text //
+-- ///////////////
+
+
+-- help text is created during start-up and can not be changed without restart (?)
+HELP = [[
+This console is used to configure the additional map editor features.
+
+    featureParameter = value        assign a new value to a feature parameter
+    return featureParameter         return the current parameter value
+
+As an example:
+
+    MIRROR_MODE = 'horizontal'      sets the mirror to 'horizontal'.
+    return MIRROR_MODE              returns the current MIRROR_MODE
+    
+Parameters are explained like this:
+
+    PARAMETER_NAME -> additional explanation
+        possibleValues      additional value explanation
+        ...
+    
+The following features are implemented:
+
+    ## Mirroring ##
+    Actions are mirrored around one or two axes.
+    Both parameters support the same values, but MIRROR_MODE2 is only active if MIRROR_MODE is also active.
+    Setting both to the same value will just apply the same behavior twice.
+                            
+    MIRROR_MODE and MIRROR_MODE2
+        "off"
+        "horizontal"
+        "vertical"
+        "diagonal_x"
+        "diagonal_y"
+        "point"             mirror around the center of the map
+        
+    ## Brush Style ##
+    Changes how drawing behaves.
+    Currently there are two "brushes" aside the normal one.
+    
+    BRUSH -> select the brush
+        "normal"            no change; dummy value, all unknown values produce this behavior
+        "spray"             "sprays" the current in-game brush by displacing the actual position
+        "shape"             apply multiple actions that form a shape; first click sets first tile, second applies
+        
+    -- Spray --
+    BRUSH_SPRAY_EXP -> higher values lead to more positions close to the actual brush position
+        Integer             should be bigger than 1
+    
+    BRUSH_SPRAY_SIZE -> max deviation from the actual brush position for both axes
+        Integer
+    
+    BRUSH_SPRAY_INT -> intensity; if random number bigger, skips the draw call
+        Float               value between 0 to 1, inclusive
+        
+    -- Shape --
+    BUG: Currently only 200 actions are supported. Big shapes, especially when mirrored, reach
+         this limit very fast. So do not be surprised if only one half of a shape appears.
+    
+    BRUSH_SHAPE -> the shape to apply
+        "line"              a simple line between two points
+        "rect"              rectangle seen from the front; clicks define edges
+        "rect45"            rectangle along the diagonals; clicks define edges
+        "circle"            a circle; first click sets middle, second border
+
+Available commands:
+        help                display this help text again
+        reload              reload the shc-mapmakerstools.lua file without restarting Stronghold.
+        stack               get the current lua stack size
+]]
+
+
+
 -- /////////////////////
 -- // config and data //
 -- /////////////////////
@@ -9,7 +84,7 @@ MIRROR_MODE2 = "off"
 
 
 -- brush config
-BRUSH = "normal"
+BRUSH = "normal" -- brushes: "normal", "spray", "shape"
 
 
 -- spray config
@@ -79,6 +154,7 @@ function countCoordDuplicates(coordTable, display)
   end
   return numberOfDuplicates
 end
+
 
 
 -- /////////////////////////////
@@ -321,7 +397,7 @@ end
 
 
 function applyBrushModification(x, y, size)
-  print("Current Coord: " ..x ..":" ..y)
+  -- print("Current Coord: " ..x ..":" ..y) -- debug
 
   coordlist = {} -- If I understand LUA right, this is a global variable and is reset every call, right?
   
@@ -373,7 +449,7 @@ function applyBrushModification(x, y, size)
   
   applyMirrors(coordlist, size)
   
-  print("Number of coord duplicates: " ..countCoordDuplicates(coordlist))
+  -- print("Number of coord duplicates: " ..countCoordDuplicates(coordlist)) -- debug
   
   return coordlist
 end
