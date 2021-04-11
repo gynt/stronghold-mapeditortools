@@ -51,6 +51,7 @@ end
 
 
 -- source: https://scriptinghelpers.org/questions/4850/how-do-i-round-numbers-in-lua-answered
+-- Note: 0.5 -> 1, -0.5 -> 0
 function round(x)
   return x + 0.5 - (x + 0.5) % 1
 end
@@ -125,13 +126,43 @@ end
 
 
 -- create coords in such a way that the player sees a rectangle
-function fillWithRectCoords(x0, y0, x1, y1, coordTable)      
-  
+-- used weird own function, maybe change to four "fillWithLineCoords" one day
+function fillWithRectCoords(x0, y0, x1, y1, coordTable)
+  local xDiff = x1 - x0
+  local yDiff = y1 - y0
+  local stepsSide = (xDiff - yDiff) / 2
+  local stepsDown = (xDiff + yDiff) / 2
+
+  -- prevent duplicates (could also use line algorithm instead?)
+  if stepsSide == 0 or stepsDown == 0 then
+    local isDownLine = stepsSide == 0
+    local steps = isDownLine and stepsDown or stepsSide
+    for i = 0, steps, 0 < steps and 1 or -1 do
+      if isDownLine then
+        table.insert(coordTable, {x0 + i, y0 + i})
+      else
+        table.insert(coordTable, {x0 + i, y0 - i})
+      end
+    end
+    return
+  end
+
+  for i = 0, stepsSide, 0 < stepsSide and 1 or -1 do
+    table.insert(coordTable, {x0 + i, y0 - i})
+    table.insert(coordTable, {x1 - i, y1 + i})
+  end
+
+  local ySign = 0 < stepsDown and 1 or -1
+  for i = 0 + ySign, stepsDown - ySign + ySign * (stepsDown % 1 ~= 0 and 1 or 0), ySign do
+    table.insert(coordTable, {x0 + i, y0 + i})
+    table.insert(coordTable, {x1 - i, y1 - i})
+  end
 end
 
 
+-- create coords in such a way that the player sees a rectangle rotated by 45 degree
 function fillWithRect45Coords(x0, y0, x1, y1, coordTable)
-  -- prevent duplicates
+  -- prevent duplicates (could also use line algorithm instead?)
   if x0 == x1 or y0 == y1 then
     local xLine = x0 == x1
     local startPos = xLine and y0 or x0
@@ -236,6 +267,8 @@ end
 
 
 function applyBrushModification(x, y, size)
+  print("Current Coord: " ..x ..":" ..y)
+
   coordlist = {} -- If I understand LUA right, this is a global variable and is reset every call, right?
   
   -- apply spray brush
@@ -267,8 +300,8 @@ function applyBrushModification(x, y, size)
   
     if BRUSH_SHAPE == "line" then
       fillWithLineCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
-    -- elseif BRUSH_SHAPE == "rect" then
-    --   print(BRUSH_SHAPE_LAST[1] .. ":" ..BRUSH_SHAPE_LAST[2])
+    elseif BRUSH_SHAPE == "rect" then
+      fillWithRectCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
     elseif BRUSH_SHAPE == "rect45" then
       fillWithRect45Coords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
     else
