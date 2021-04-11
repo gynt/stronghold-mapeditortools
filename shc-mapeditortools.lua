@@ -65,10 +65,10 @@ function countCoordDuplicates(coordTable, display)
   end
   
   local numberOfDuplicates = 0
-  for keyOne, coordOne in pairs(coordTable) do
-    for keyTwo, coordTwo in pairs(coordTable) do
-      -- also ignore the same entry
-      if keyOne ~= keyTwo and coordOne[1] == coordTwo[1] and coordOne[2] == coordTwo[2] then
+  for indexOne, coordOne in ipairs(coordTable) do
+    for indexTwo, coordTwo in ipairs(coordTable) do
+      -- also ignore the same and previous entries to prevent duplicates of duplicates
+      if indexOne < indexTwo and coordOne[1] == coordTwo[1] and coordOne[2] == coordTwo[2] then
         numberOfDuplicates = numberOfDuplicates + 1
       
         if display then
@@ -204,6 +204,60 @@ end
 ]]--
 
 
+--[[
+  function used to draw a circle using Mid-Point Circle Drawing Algorithm
+  source: https://www.geeksforgeeks.org/mid-point-circle-drawing-algorithm/
+  
+  Note (from TheRedDaemon):
+    - originally used Bresenham’s Algorithm (source: https://www.geeksforgeeks.org/bresenhams-circle-drawing-algorithm/)
+    - but it produced duplicates I was unable to remove
+]]--
+function fillWithCircleCoords(x_centre, y_centre, xr, yr, coordTable)
+  local r = round(math.sqrt((x_centre - xr)^2 + (y_centre - yr)^2))
+  local x = r
+  local y = 0
+    
+  -- Slightly changed for SHC, since it produced duplicates and wrong output:
+  -- Printing the initial points on the axes after translation
+  table.insert(coordTable, {r + x_centre, y_centre})
+  if r > 0 then --When radius is zero only a single point will be printed
+    table.insert(coordTable, {-r + x_centre, y_centre})
+    table.insert(coordTable, {x_centre, r + y_centre})
+    table.insert(coordTable, {x_centre, -r + y_centre})
+  end
+    
+  -- Initializing the value of P
+  local P = 1 - r
+  while x > y do 
+    y = y + 1
+    
+    if P <= 0 then -- Mid-point is inside or on the perimeter
+      P = P + 2 * y + 1     
+    else -- Mid-point is outside the perimeter
+      x = x - 1
+      P = P + 2 * y - 2 * x + 1
+    end
+      
+    -- All the perimeter points have already been printed
+    if x < y then break end
+      
+    -- Printing the generated point and its reflection in the other octants after translation
+    table.insert(coordTable, {x + x_centre, y + y_centre})
+    table.insert(coordTable, {-x + x_centre, y + y_centre})
+    table.insert(coordTable, {x + x_centre, -y + y_centre})
+    table.insert(coordTable, {-x + x_centre, -y + y_centre})
+      
+    -- If the generated point is on the line x = y then the perimeter points have already been printed
+    if x ~= y then
+      table.insert(coordTable, {y + x_centre, x + y_centre})
+      table.insert(coordTable, {-y + x_centre, x + y_centre})
+      table.insert(coordTable, {y + x_centre, -x + y_centre})
+      table.insert(coordTable, {-y + x_centre, -x + y_centre})
+    end
+  end
+end
+
+
 -- // mirror support //
 
 
@@ -304,6 +358,8 @@ function applyBrushModification(x, y, size)
       fillWithRectCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
     elseif BRUSH_SHAPE == "rect45" then
       fillWithRect45Coords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
+    elseif BRUSH_SHAPE == "circle" then
+      fillWithCircleCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
     else
       print("No valid shape: " ..BRUSH_SHAPE)
     end
@@ -317,7 +373,7 @@ function applyBrushModification(x, y, size)
   
   applyMirrors(coordlist, size)
   
-  print("Number of duplicates: " ..countCoordDuplicates(coordlist))
+  print("Number of coord duplicates: " ..countCoordDuplicates(coordlist))
   
   return coordlist
 end
