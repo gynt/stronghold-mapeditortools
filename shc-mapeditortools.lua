@@ -1,25 +1,41 @@
-MIRROR_MODE = "point"
+
+-- /////////////////////
+-- // config and data //
+-- /////////////////////
+
+
+MIRROR_MODE = "off"
 MIRROR_MODE2 = "off"
+
 
 -- brush config
 BRUSH = "normal"
+
 
 -- spray config
 BRUSH_SPRAY_EXP = 3 -- defines how centered the random positions should be (higher -> more centered, should be bigger than 1)
 BRUSH_SPRAY_SIZE = 8 -- TEMP? Would need reliable way to get the set brush size, regardless of the action
 BRUSH_SPRAY_INT = 0.25 -- intensity -> 0 to 1, if random number bigger, skips the draw call
 
--- line config/data
-BRUSH_LINE_LAST = {}
+
+-- shape config
+BRUSH_SHAPE = "line" -- shapes: "line", "rect", "rect45", "circle"
+-- shape data
+BRUSH_SHAPE_LAST = {} -- last selected points
 
 
--- helper 
+
+-- //////////////////////
+-- // helper functions //
+-- //////////////////////
+
 
 -- source: https://stackoverflow.com/a/1252776
 function isTableEmpty(t)
   local next = next
   return next(t) == nil
 end
+
 
 --[[
   Apparently there is #, but this only works on array-style tables.
@@ -33,10 +49,44 @@ function getTableLength(t)
   return count
 end
 
+
 -- source: https://scriptinghelpers.org/questions/4850/how-do-i-round-numbers-in-lua-answered
 function round(x)
   return x + 0.5 - (x + 0.5) % 1
 end
+
+
+-- find coord duplicates in "coordTable"
+-- if "display" true -> prints duplicates
+function countCoordDuplicates(coordTable, display)
+  if display ~= false and display ~= true then
+    display = false -- default
+  end
+  
+  local numberOfDuplicates = 0
+  for keyOne, coordOne in pairs(coordTable) do
+    for keyTwo, coordTwo in pairs(coordTable) do
+      -- also ignore the same entry
+      if keyOne ~= keyTwo and coordOne[1] == coordTwo[1] and coordOne[2] == coordTwo[2] then
+        numberOfDuplicates = numberOfDuplicates + 1
+      
+        if display then
+          print("Duplicate found: " ..coordOne[1] ..":" ..coordOne[2])
+        end
+      end
+    end
+  end
+  return numberOfDuplicates
+end
+
+
+-- /////////////////////////////
+-- // brush support functions //
+-- /////////////////////////////
+
+
+-- // spray brush //
+
 
 -- generates a random deviation for the spray brush using the size
 function randomSprayDeviation(size)
@@ -44,6 +94,10 @@ function randomSprayDeviation(size)
   rand = math.random() < 0.5 and -rand or rand -- plus or minus
   return rand
 end
+
+
+-- // shape brush //
+
 
 -- Fills coordTable with {x,y} int coordinates using Bresenham's line algorithm.
 -- According to source, this version does not guarantee a coordinate order. Could be x0, y0 to x1, y1 or vise versa.
@@ -69,49 +123,58 @@ function fillWithLineCoords(x0, y0, x1, y1, coordTable)
   end
 end
 
--- helper end
 
-
-function applyBrushModification(x, y, size)
-  coordlist = {} -- If I understand LUA right, this is a global variable and is reset every call, right?
+-- create coords in such a way that the player sees a rectangle
+function fillWithRectCoords(x0, y0, x1, y1, coordTable)      
   
-  -- apply spray brush
-  if BRUSH == "spray" then
-  
-    -- return empty coordlist to skip drawing
-    if math.random() > BRUSH_SPRAY_INT then
-      return coordlist
-    end
-  
-    x = x + randomSprayDeviation(BRUSH_SPRAY_SIZE)
-    y = y + randomSprayDeviation(BRUSH_SPRAY_SIZE)
-  end
-  
-  --[[
-    apply line brush
-    BUG?: Big draw requests are not completely applied. Some sort of limit?
-    TODO?: Line Coords are not applied in a very structured order, currently it seems to be:
-      - actual line (direction not defined currently) -> mirrors of first point, mirrors of second point,...
-        - this could be better
-  ]]--
-  if BRUSH == "line" then
-    if isTableEmpty(BRUSH_LINE_LAST) then
-      BRUSH_LINE_LAST = {x,y}
-      return coordlist -- skip drawing, only remember
-    else
-      fillWithLineCoords(BRUSH_LINE_LAST[1], BRUSH_LINE_LAST[2], x, y, coordlist)
-      BRUSH_LINE_LAST = {}
-    end
-  else
-    BRUSH_LINE_LAST = {} -- remove last entry, even on brush switch (could be better...)
-    
-    table.insert(coordlist, {x,y}) -- add coords -> I do not like this placement, but line would add them twice otherwise
-  end
-  
-  applyMirrors(coordlist, size)
-  
-  return coordlist
 end
+
+
+function fillWithRect45Coords(x0, y0, x1, y1, coordTable)
+  -- prevent duplicates
+  if x0 == x1 or y0 == y1 then
+    local xLine = x0 == x1
+    local startPos = xLine and y0 or x0
+    local endPos = xLine and y1 or x1
+    for i = startPos, endPos, startPos < endPos and 1 or -1 do
+      if xLine then
+        table.insert(coordTable, {x0, i})
+      else
+        table.insert(coordTable, {i, y0})
+      end
+    end
+    return
+  end
+
+  for i = x0, x1, x0 < x1 and 1 or -1 do
+    table.insert(coordTable, {i, y0})
+    table.insert(coordTable, {i, y1})
+  end
+  
+  local ySign = y0 < y1 and 1 or -1
+  for i = y0 + ySign, y1 - ySign, ySign do -- skip edges set by run over x
+    table.insert(coordTable, {x0, i})
+    table.insert(coordTable, {x1, i})
+  end
+end
+
+
+--[[
+-- as long as there is a limit on the input actions, this function does not make much sense
+
+-- create coords in such a way that the player sees a filled rectangle rotated by 45 degree
+function fillWithFilledRect45Coords(x0, y0, x1, y1, coordTable)  
+  for i = x0, x1, x0 < x1 and 1 or -1 do
+    for j = y0, y1, y0 < y1 and 1 or -1 do
+      table.insert(coordTable, {i, j})
+    end
+  end
+end
+]]--
+
+
+-- // mirror support //
+
 
 -- mirror all coordinates and add the new coordinates to the coordTable
 function applyMirrors(coordTable, size)
@@ -132,6 +195,7 @@ function applyMirrors(coordTable, size)
     table.insert(coordTable, coord)
   end
 end
+
 
 function applyMirror(x, y, size, mirrorMode)
   local newx = x
@@ -163,6 +227,68 @@ function applyMirror(x, y, size, mirrorMode)
   end
   return {newx, newy}
 end
+
+
+
+-- ///////////////////////
+-- // control functions //
+-- ///////////////////////
+
+
+function applyBrushModification(x, y, size)
+  coordlist = {} -- If I understand LUA right, this is a global variable and is reset every call, right?
+  
+  -- apply spray brush
+  if BRUSH == "spray" then
+  
+    -- return empty coordlist to skip drawing
+    if math.random() > BRUSH_SPRAY_INT then
+      return coordlist
+    end
+  
+    x = x + randomSprayDeviation(BRUSH_SPRAY_SIZE)
+    y = y + randomSprayDeviation(BRUSH_SPRAY_SIZE)
+  end
+  
+  --[[
+    apply shape brush
+    BUG?: Big draw requests are not completely applied. Some sort of limit?
+    TODO?: shape coords are not applied in a very structured order, currently it seems to be:
+      - actual coords (direction not defined currently) -> mirrors of first point, mirrors of second point,...
+        - this could be better
+  ]]--
+  if BRUSH == "shape" then
+    
+    -- currently no shape that takes three point, so this can be general
+    if isTableEmpty(BRUSH_SHAPE_LAST) then
+      BRUSH_SHAPE_LAST = {x,y}
+      return coordlist -- skip drawing, only remember
+    end
+  
+    if BRUSH_SHAPE == "line" then
+      fillWithLineCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
+    -- elseif BRUSH_SHAPE == "rect" then
+    --   print(BRUSH_SHAPE_LAST[1] .. ":" ..BRUSH_SHAPE_LAST[2])
+    elseif BRUSH_SHAPE == "rect45" then
+      fillWithRect45Coords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
+    else
+      print("No valid shape: " ..BRUSH_SHAPE)
+    end
+    
+    BRUSH_SHAPE_LAST = {} -- remove point after shape was applied (or failed to do so)
+  else
+    BRUSH_SHAPE_LAST = {} -- remove last entry, even on brush switch (could be better...)
+    
+    table.insert(coordlist, {x,y}) -- add coords -> I do not like this placement, but shape would add them twice otherwise
+  end
+  
+  applyMirrors(coordlist, size)
+  
+  print("Number of duplicates: " ..countCoordDuplicates(coordlist))
+  
+  return coordlist
+end
+
 
 function erase(x, y, brush)
   return applyBrush(x, y, brush)
