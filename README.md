@@ -3,7 +3,7 @@ Map Editor Tool Set for Stronghold (in the future) and Stronghold Crusader
 
 ## Features
 Make your custom maps symmetrical by mirroring every action in the map editor.  
-Or use brush-modifiers to either deviate the position of the current selected action in sprays like manner or apply multiple types of shapes.
+Or use brush-modifiers to either deviate the position of the current selected action in spray-like manner or apply multiple types of shapes.
 
 ## Installation instructions
 1. Download the files from this repository for your version of Stronghold (currently only Stronghold Crusader 1.41 is supported)

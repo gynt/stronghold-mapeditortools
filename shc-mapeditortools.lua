@@ -5,6 +5,7 @@
 
 
 -- help text is created during start-up and can not be changed without restart (?)
+-- TODO: change help text according to new modification system
 HELP = [[
 This console is used to configure the additional map editor features.
 
@@ -22,7 +23,36 @@ Parameters are explained like this:
         possibleValues      additional value explanation
         ...
     
-The following features are implemented:
+The following features are implemented and currently applied in the order they are mentioned:
+
+    ## Shape Brush ##
+    Uses the coordinates of two clicks (the first one does nothing) to create a shape.
+    WARNING: Currently only 200 actions are supported. Big shapes, especially when mirrored, reach
+             this limit very fast. So do not be surprised if only one half of a shape appears.
+             
+    BRUSH_SHAPE -> deactivate/activate
+        boolean             false or true
+             
+    BRUSH_SHAPE_SHAPE -> the shape to apply
+        "line"              a simple line between two points
+        "rect"              rectangle seen from the front; clicks define edges
+        "rect45"            rectangle along the diagonals; clicks define edges
+        "circle"            a circle; first click sets middle, second border
+    
+    ## Spray Brush ##
+    "Sprays" the current coordinates by displacing them by a random amount.
+    
+    BRUSH_SPRAY -> deactivate/activate
+        boolean             false or true
+        
+    BRUSH_SPRAY_EXP -> higher values lead to more positions close to the actual brush position
+        Integer             whole numbers, should be bigger than 1
+    
+    BRUSH_SPRAY_SIZE -> max deviation from the actual brush position for both axes
+        Integer             whole numbers
+    
+    BRUSH_SPRAY_INT -> intensity; if random number bigger, skips the draw call
+        Float               value between 0 to 1, inclusive
 
     ## Mirroring ##
     Actions are mirrored around one or two axes.
@@ -36,35 +66,6 @@ The following features are implemented:
         "diagonal_x"
         "diagonal_y"
         "point"             mirror around the center of the map
-        
-    ## Brush Style ##
-    Changes how drawing behaves.
-    Currently there are two "brushes" aside the normal one.
-    
-    BRUSH -> select the brush
-        "normal"            no change; dummy value, all unknown values produce this behavior
-        "spray"             "sprays" the current in-game brush by displacing the actual position
-        "shape"             apply multiple actions that form a shape; first click sets first tile, second applies
-        
-    -- Spray --
-    BRUSH_SPRAY_EXP -> higher values lead to more positions close to the actual brush position
-        Integer             should be bigger than 1
-    
-    BRUSH_SPRAY_SIZE -> max deviation from the actual brush position for both axes
-        Integer
-    
-    BRUSH_SPRAY_INT -> intensity; if random number bigger, skips the draw call
-        Float               value between 0 to 1, inclusive
-        
-    -- Shape --
-    BUG: Currently only 200 actions are supported. Big shapes, especially when mirrored, reach
-         this limit very fast. So do not be surprised if only one half of a shape appears.
-    
-    BRUSH_SHAPE -> the shape to apply
-        "line"              a simple line between two points
-        "rect"              rectangle seen from the front; clicks define edges
-        "rect45"            rectangle along the diagonals; clicks define edges
-        "circle"            a circle; first click sets middle, second border
 
 Available commands:
         help                display this help text again
@@ -79,25 +80,29 @@ Available commands:
 -- /////////////////////
 
 
+-- @TheRedDaemon: Maybe using some config/data table would be beneficial?
+
+
+-- mirror config
 MIRROR_MODE = "off"
 MIRROR_MODE2 = "off"
 
 
 -- brush config
-BRUSH = "normal" -- brushes: "normal", "spray", "shape"
+BRUSH_SPRAY = false -- is spray coord modification active
+BRUSH_SHAPE = false -- is shape coord modification active
 
 
 -- spray config
 BRUSH_SPRAY_EXP = 3 -- defines how centered the random positions should be (higher -> more centered, should be bigger than 1)
-BRUSH_SPRAY_SIZE = 8 -- TEMP? Would need reliable way to get the set brush size, regardless of the action
+BRUSH_SPRAY_SIZE = 8 -- max spray deviation for both axes
 BRUSH_SPRAY_INT = 0.25 -- intensity -> 0 to 1, if random number bigger, skips the draw call
 
 
 -- shape config
-BRUSH_SHAPE = "line" -- shapes: "line", "rect", "rect45", "circle"
+BRUSH_SHAPE_SHAPE = "line" -- shapes: "line", "rect", "rect45", "circle" -- @TheRedDaemon: Not happy about the name. Suggestions?
 -- shape data
 BRUSH_SHAPE_LAST = {} -- last selected points
-
 
 
 -- //////////////////////
@@ -157,9 +162,9 @@ end
 
 
 
--- /////////////////////////////
--- // brush support functions //
--- /////////////////////////////
+-- ////////////////////////////////////////
+-- // brush and mirror support functions //
+-- ////////////////////////////////////////
 
 
 -- // spray brush //
@@ -337,27 +342,6 @@ end
 -- // mirror support //
 
 
--- mirror all coordinates and add the new coordinates to the coordTable
-function applyMirrors(coordTable, size)
-  -- I lack LUA knowledge, so there might be a more efficient way than a second array...
-  local dummyCoordTable = {}
-  for _, coord in pairs(coordTable) do
-    if MIRROR_MODE ~= "off" then
-      local firstMirror = applyMirror(coord[1], coord[2], size, MIRROR_MODE)
-      table.insert(dummyCoordTable, firstMirror)
-      
-      if MIRROR_MODE2 ~= "off" then
-        table.insert(dummyCoordTable, applyMirror(coord[1], coord[2], size, MIRROR_MODE2))
-        table.insert(dummyCoordTable, applyMirror(firstMirror[1], firstMirror[2], size, MIRROR_MODE2))
-      end
-    end
-  end
-  for _, coord in pairs(dummyCoordTable) do
-    table.insert(coordTable, coord)
-  end
-end
-
-
 function applyMirror(x, y, size, mirrorMode)
   local newx = x
   local newy = y
@@ -396,60 +380,103 @@ end
 -- ///////////////////////
 
 
-function applyBrushModification(x, y, size)
-  -- print("Current Coord: " ..x ..":" ..y) -- debug
-
-  coordlist = {} -- If I understand LUA right, this is a global variable and is reset every call, right?
-  
-  -- apply spray brush
-  if BRUSH == "spray" then
-  
-    -- return empty coordlist to skip drawing
-    if math.random() > BRUSH_SPRAY_INT then
-      return coordlist
-    end
-  
-    x = x + randomSprayDeviation(BRUSH_SPRAY_SIZE)
-    y = y + randomSprayDeviation(BRUSH_SPRAY_SIZE)
+-- @TheRedDaemon
+-- Uses a previous click and the current click to generate NEW coordlist that forms a shape.
+-- Will return an empty coordlist after it stored the first coordinate for the shape.
+-- Shapes alone should not produce duplicates.
+-- WARNING: Currently only the first coordinate (coordlist[1]) will be used.
+-- WARNING: Currently maximal 200 coords can be applied. This easily results in incomplete big shapes.
+function applyShape(coordlist, size)
+  if not BRUSH_SHAPE or isTableEmpty(coordlist) then
+    BRUSH_SHAPE_LAST = {} -- remove last entry if brush inactive (sadly happens on every call)
+    return coordlist
   end
   
-  --[[
-    apply shape brush
-    BUG?: Big draw requests are not completely applied. Some sort of limit?
-    TODO?: shape coords are not applied in a very structured order, currently it seems to be:
-      - actual coords (direction not defined currently) -> mirrors of first point, mirrors of second point,...
-        - this could be better
-  ]]--
-  if BRUSH == "shape" then
-    
-    -- currently no shape that takes three point, so this can be general
-    if isTableEmpty(BRUSH_SHAPE_LAST) then
-      BRUSH_SHAPE_LAST = {x,y}
-      return coordlist -- skip drawing, only remember
-    end
+  local newCoordlist = {}
+  local x = coordlist[1][1]
+  local y = coordlist[1][2]
   
-    if BRUSH_SHAPE == "line" then
-      fillWithLineCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
-    elseif BRUSH_SHAPE == "rect" then
-      fillWithRectCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
-    elseif BRUSH_SHAPE == "rect45" then
-      fillWithRect45Coords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
-    elseif BRUSH_SHAPE == "circle" then
-      fillWithCircleCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, coordlist)
-    else
-      print("No valid shape: " ..BRUSH_SHAPE)
-    end
-    
-    BRUSH_SHAPE_LAST = {} -- remove point after shape was applied (or failed to do so)
+  -- currently no shape that takes three points, so this can be general
+  if isTableEmpty(BRUSH_SHAPE_LAST) then
+    BRUSH_SHAPE_LAST = {x,y}
+    return newCoordlist -- skip drawing, only remember
+  end
+  
+  if BRUSH_SHAPE_SHAPE == "line" then
+    fillWithLineCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, newCoordlist)
+  elseif BRUSH_SHAPE_SHAPE == "rect" then
+    fillWithRectCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, newCoordlist)
+  elseif BRUSH_SHAPE_SHAPE == "rect45" then
+    fillWithRect45Coords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, newCoordlist)
+  elseif BRUSH_SHAPE_SHAPE == "circle" then
+    fillWithCircleCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, newCoordlist)
   else
-    BRUSH_SHAPE_LAST = {} -- remove last entry, even on brush switch (could be better...)
-    
-    table.insert(coordlist, {x,y}) -- add coords -> I do not like this placement, but shape would add them twice otherwise
+    print("No valid shape: " ..BRUSH_SHAPE_SHAPE)
   end
   
-  applyMirrors(coordlist, size)
+  BRUSH_SHAPE_LAST = {} -- remove point after shape was applied (or failed to do so)
   
-  -- print("Number of coord duplicates: " ..countCoordDuplicates(coordlist)) -- debug
+  -- print("Number of coord duplicates after applying shape: " ..countCoordDuplicates(newCoordlist)) -- debug
+  
+  return newCoordlist
+end
+
+
+-- @TheRedDaemon
+-- Modifies all coords in coordlist by adding a random deviation.
+-- If BRUSH_SPRAY_INT < 1, this function will build a new coordlist with the remaining coords. 
+-- Produces duplicates.
+function applySpray(coordlist, size)
+  if not BRUSH_SPRAY then
+    return coordlist
+  end
+  
+  if BRUSH_SPRAY_INT < 1 then
+    local newCoordlist = {}
+  
+    for _, coord in ipairs(coordlist) do
+      -- only add coord if random number smaller then BRUSH_SPRAY_INT
+      if math.random() < BRUSH_SPRAY_INT then
+        coord[1] = coord[1] + randomSprayDeviation(BRUSH_SPRAY_SIZE)
+        coord[2] = coord[2] + randomSprayDeviation(BRUSH_SPRAY_SIZE)
+        table.insert(newCoordlist, coord)
+      end
+    end
+    
+    coordlist = newCoordlist
+  else
+    for _, coord in ipairs(coordlist) do
+      coord[1] = coord[1] + randomSprayDeviation(BRUSH_SPRAY_SIZE)
+      coord[2] = coord[2] + randomSprayDeviation(BRUSH_SPRAY_SIZE)
+    end
+  end
+  
+  -- print("Number of coord duplicates after applying spray: " ..countCoordDuplicates(coordlist)) -- debug
+  
+  return coordlist
+end
+
+
+-- mirror all coordinates and add the new coordinates to the coordlist
+-- Produces duplicates.
+function applyMirrors(coordlist, size)
+  local dummyCoordTable = {}
+  for _, coord in pairs(coordlist) do
+    if MIRROR_MODE ~= "off" then
+      local firstMirror = applyMirror(coord[1], coord[2], size, MIRROR_MODE)
+      table.insert(dummyCoordTable, firstMirror)
+      
+      if MIRROR_MODE2 ~= "off" then
+        table.insert(dummyCoordTable, applyMirror(coord[1], coord[2], size, MIRROR_MODE2))
+        table.insert(dummyCoordTable, applyMirror(firstMirror[1], firstMirror[2], size, MIRROR_MODE2))
+      end
+    end
+  end
+  for _, coord in pairs(dummyCoordTable) do
+    table.insert(coordlist, coord)
+  end
+  
+  -- print("Number of coord duplicates after applying mirrors: " ..countCoordDuplicates(coordlist)) -- debug
   
   return coordlist
 end
@@ -490,9 +517,24 @@ end
 
 
  -- functions that now do the actual thing required :)
+ 
+-- @TheRedDaemon
+-- general function to create coordinatelist
+function applyCoordModification(x, y, size)
+  -- print("Current Coord: " ..x ..":" ..y) -- debug
+  
+  local coordinatelist = {{x, y}}
+  for _, func in ipairs(ACTIVE_TRANSFORMATIONS) do -- ipairs to guarantee order
+    coordinatelist = func(coordinatelist, 1)
+  end
+  
+  -- print("Total number of coords: " ..getTableLength(coordinatelist)) -- debug
+  
+  return coordinatelist
+end
 
 function applyBrush (x, y, brush)
-  coordinatelist = applyBrushModification(x, y, 1)  
+  coordinatelist = applyCoordModification(x, y, 1)  
   
   for k,coordpair in ipairs(coordinatelist) do
     table.insert(coordpair, brush)
@@ -502,7 +544,7 @@ function applyBrush (x, y, brush)
 end
 
 function transformTerrain(x, y, brush, change)
-  coordinatelist = applyBrushModification(x, y, 1)  
+  coordinatelist = applyCoordModification(x, y, 1)  
   
   for k,coordpair in ipairs(coordinatelist) do
     table.insert(coordpair, brush)
@@ -513,7 +555,7 @@ function transformTerrain(x, y, brush, change)
 end
 
 function setTerrainType(x, y, brush, terrainType, unknown)
-  coordinatelist = applyBrushModification(x, y, 1)  
+  coordinatelist = applyCoordModification(x, y, 1)  
   
   for k,coordpair in ipairs(coordinatelist) do
     table.insert(coordpair, brush)
@@ -528,9 +570,9 @@ end
 function placeTreeOrRock(x, y, objectType, rockType)
   
   if objectType == 20 then -- adjust with a translation for the fact that a rock can be larger than 1x1
-    coordinatelist = applyBrushModification(x, y, math.floor(rockType/4)+1)  
+    coordinatelist = applyCoordModification(x, y, math.floor(rockType/4)+1)  
   else
-    coordinatelist = applyBrushModification(x, y, 1)  
+    coordinatelist = applyCoordModification(x, y, 1)  
   end
   
   for k,coordpair in ipairs(coordinatelist) do
@@ -540,3 +582,19 @@ function placeTreeOrRock(x, y, objectType, rockType)
   
   return coordinatelist  
 end
+
+
+
+-- ///////////////////////
+-- // additional config //
+-- ///////////////////////
+
+
+-- @TheRedDaemon
+-- Coordinate modification order
+-- Lua was not seemingly not able to add global function refs at the start (before definition?)
+ACTIVE_TRANSFORMATIONS = {
+   applyShape,              -- 1. draw shape
+   applySpray,              -- 2. mess it up
+   applyMirrors             -- 3. mirror
+}
