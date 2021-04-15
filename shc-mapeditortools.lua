@@ -111,7 +111,7 @@ BRUSH_SPRAY_INT = 0.25 -- intensity -> 0 to 1, if random number bigger, skips th
 
 
 -- shape config
-BRUSH_SHAPE_SHAPE = "line" -- shapes: "line", "rect", "rect45", "circle" -- @TheRedDaemon: Not happy about the value name. Suggestions?
+BRUSH_SHAPE_SHAPE = "line" -- shapes: "line", "rect", "rect45", "circle" -- @TheRedDaemon: Not happy about the variable name. Suggestions?
 -- shape data
 BRUSH_SHAPE_LAST = {} -- last selected points
 
