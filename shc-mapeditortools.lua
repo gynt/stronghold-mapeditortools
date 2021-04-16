@@ -14,68 +14,84 @@
 HELP = [[
 This console is used to configure the additional map editor features.
 
-    featureParameter = value        assign a new value to a feature parameter
-    return featureParameter         return the current parameter value
+    FEATURE.parameter = value           assign a new value to a feature parameter
+    return FEATURE.parameter            return the current parameter value
 
 As an example:
 
-    MIRROR_MODE = 'horizontal'      sets the mirror to 'horizontal'.
-    return MIRROR_MODE              returns the current MIRROR_MODE
+    MIRROR.mirrorMode = 'horizontal'    sets the mirror to 'horizontal'.
+    return MIRROR.mirrorMode            returns the current MIRROR_MODE
     
 Parameters are explained like this:
 
-    PARAMETER_NAME -> additional explanation
+    FEATURE.parameter -> additional explanation
         possibleValues      additional value explanation
         ...
     
+WARNING: Currently max 200 actions are supported. Big shapes, especially when mirrored, reach
+         this limit very fast. So do not be surprised if only one half of a shape appears.
+
 The following features are implemented and currently applied in the order they are mentioned:
 
     ## Shape Brush ##
     Uses the coordinates of two clicks (the first one does nothing) to create a shape.
-    WARNING: Currently only 200 actions are supported. Big shapes, especially when mirrored, reach
-             this limit very fast. So do not be surprised if only one half of a shape appears.
     WARNING: The first coordinate is only invalidated after use or after disabling the shape brush.
              
-    BRUSH_SHAPE -> deactivate/activate
+    SHAPE.active -> deactivate/activate
         boolean             false or true
              
-    BRUSH_SHAPE_SHAPE -> the shape to apply
+    SHAPE.shape -> the shape to apply
         "line"              a simple line between two points
         "rect"              rectangle seen from the front; clicks define edges
         "rect45"            rectangle along the diagonals; clicks define edges
         "circle"            a circle; first click sets middle, second border
+        
+    SHAPE.removeRememberedCoords -> if "true", than the first click is not drawn
+        boolean             false or true
+        
+    SHAPE.connectShapes -> decides how shapes are drawn if multiple coordinates reach this phase
+        true                coordinates are reused; for example, lines are connected
+        false               coordinates are only used once
     
     ## Spray Brush ##
     "Sprays" the current coordinates by displacing them by a random amount.
     
-    BRUSH_SPRAY -> deactivate/activate
+    SPRAY.active -> deactivate/activate
         boolean             false or true
         
-    BRUSH_SPRAY_EXP -> higher values lead to more positions close to the actual brush position
+    SPRAY.sprayExp -> higher values lead to more positions close to the actual brush position
         Integer             whole numbers, should be bigger than 1
     
-    BRUSH_SPRAY_SIZE -> max deviation from the actual brush position for both axes
+    SPRAY.spraySize -> max deviation from the actual brush position for both axes
         Integer             whole numbers
     
-    BRUSH_SPRAY_INT -> intensity; if random number bigger, skips the draw call
-        Float               value between 0 to 1, inclusive
+    SPRAY.sprayInt -> intensity; if random number bigger, skips the draw call
+        Float               value between 0 to 1, inclusive   
+
+    ## Shape Brush 2 ##
+    Functions like "Shape Brush", but instead of "SHAPE", the feature name is "SHAPE_2".
 
     ## Mirroring ##
-    Actions are mirrored around one or two axes.
-    Both parameters support the same values, but MIRROR_MODE2 is only active if MIRROR_MODE is also active.
-    Setting both to the same value will just apply the same behavior twice.
+    Actions are mirrored around one axis.
+    
+    MIRROR.active -> deactivate/activate
+        boolean             false or true
                             
-    MIRROR_MODE and MIRROR_MODE2
-        "off"
+    MIRROR.mirrorMode
         "horizontal"
         "vertical"
         "diagonal_x"
         "diagonal_y"
         "point"             mirror around the center of the map
         
-    MIRROR_ORDER -> order of coordinates after mirroring
-        "shape"             draws original shape first, then first mirror, then second mirror
+    MIRROR.coordOrder -> order of coordinates after mirroring
+        "shape"             draws original shape first, then the mirror
         "coord"             every single coordinate of the original shape is mirrored one after another
+        
+    ## Mirroring 2 ##
+    Functions like "Mirroring", but instead of "MIRROR", the feature name is "MIRROR_2".
+    Allows to apply a second mirror.
+    Using the same mirror mode twice however will only apply the original coordinates a second time.
 
 Available commands:
         help                display this help text again
@@ -433,14 +449,18 @@ end
 
 
 --[[
-  Uses a previous click and the current click to generate NEW coordlist that forms a shape.
+  Uses a previous click and the current click to generate NEW "coordlist" that forms a shape.
+  Or will try to create multiple shapes in a NEW "coordlist" if it receives multiple coords.
   
-  Will return an empty coordlist after it stored the first coordinate for the shape.
-  Shapes alone should not produce duplicates.
+  Returns an empty "coordlist" after it stored the first coordinate for the shape if
+  "config.removeRememberedCoords" is set to "true".
+  If multiple coords are received, then setting "config.connectShapes" to "true" will use non
+  start or end coords twice and will result in connected shapes.
+  A single shape should not produce duplicates. Multiple will.
   
-  WARNING: Currently only the first coordinate (coordlist[1]) will be used.
   WARNING: Currently maximal 200 coords can be applied. This easily results in incomplete big shapes.
-  WARNING: The first coordinate is only invalidated after use or after disabling the shape brush.
+  WARNING: The first coordinate is only invalidated after use, after receiving multiple coords
+           or after disabling the shape brush.
   
   @TheRedDaemon
 ]]--
@@ -449,32 +469,54 @@ function applyShape(config, coordlist, size)
     config.lastCoords = {} -- remove last entry if brush inactive (sadly happens on every call)
     return coordlist
   end
-  
-  local refLastCoords = config.lastCoords
   local newCoordlist = {}
-  local x = coordlist[1][1]
-  local y = coordlist[1][2]
   
+  -- trusting on continuous index (should this make issues: get length)
   -- currently no shape that takes three points, so this can be general
-  if isTableEmpty(refLastCoords) then
-    config.lastCoords = {x,y}
-    return newCoordlist -- skip drawing, only remember
+  if coordlist[2] == nil and isTableEmpty(config.lastCoords) then
+    config.lastCoords = coordlist
+    return config.removeRememberedCoords and newCoordlist or coordlist
   end
   
   local shape = config.shape
+  local fillFunction = nil
+  
   if shape == "line" then
-    fillWithLineCoords(refLastCoords[1], refLastCoords[2], x, y, newCoordlist)
+    fillFunction = fillWithLineCoords
   elseif shape == "rect" then
-    fillWithRectCoords(refLastCoords[1], refLastCoords[2], x, y, newCoordlist)
+    fillFunction = fillWithRectCoords
   elseif shape == "rect45" then
-    fillWithRect45Coords(refLastCoords[1], refLastCoords[2], x, y, newCoordlist)
+    fillFunction = fillWithRect45Coords
   elseif shape == "circle" then
-    fillWithCircleCoords(refLastCoords[1], refLastCoords[2], x, y, newCoordlist)
-  else
-    print("No valid shape: " ..shape)
+    fillFunction = fillWithCircleCoords
   end
   
-  config.lastCoords = {} -- remove point after shape was applied (or failed to do so)
+  if fillFunction == nil then
+    print("No valid shape: " ..shape)
+    config.lastCoords = {} -- remove due to invalid shape
+    return coordlist
+  end
+  
+  if coordlist[2] == nil then
+    -- no shape with more than two coords, so:
+    fillFunction(config.lastCoords[1][1], config.lastCoords[1][2],
+        coordlist[1][1], coordlist[1][2], newCoordlist)
+  else
+    local connectShapes = config.connectShapes
+  
+    -- no shape with anything other than two coords, so the loop can be simple
+    local lastCoord = nil
+    for _, coord in ipairs(coordlist) do
+      if lastCoord ~= nil then
+        fillFunction(lastCoord[1], lastCoord[2], coord[1], coord[2], newCoordlist)
+        lastCoord = connectShapes and coord or nil
+      else
+        lastCoord = coord
+      end
+    end
+  end
+  
+  config.lastCoords = {} -- remove points after any kind of shape was applied
   
   -- print("Number of coord duplicates after applying shape: " ..countCoordDuplicates(newCoordlist)) -- debug
   
@@ -566,9 +608,8 @@ function applyMirrors(config, coordlist, size)
     coordlist = newCoordTable
     
   elseif coordOrder == "shape" then
-    local numberOfCoords = #coordlist -- @TheRedDaemon: Should only have number indexes, so this should be fine.
-    
-    for index = 1, numberOfCoords do
+    -- @TheRedDaemon: # should only have number indexes, so this should be fine.
+    for index = 1, #coordlist do
       table.insert(coordlist, applyMirror(coordlist[index][1], coordlist[index][2], size, mirrorMode))
     end
   else
@@ -756,26 +797,43 @@ SPRAY = {
 
 
 SHAPE = {
-  shape         =   "line"          ,   -- shapes: "line", "rect", "rect45", "circle" -- @TheRedDaemon: Not happy about the variable name. Suggestions?
+  shape                     =   "line"      ,   -- shapes: "line", "rect", "rect45", "circle"
+  removeRememberedCoords    =   true        ,   -- "true": coord added to "lastCoords" is removed from the pipeline
+  connectShapes             =   false       ,   -- connectShapes: "true": coordlist index is only moved by 1 before the next shape is drawn
+                                                --                "false": uses coords only once, unused remainders are silently discarded
 
-  lastCoords    =   {}              ,   -- data: last selected points
+  lastCoords                =   {}          ,   -- data: last selected points
 
-  active        =   false           ,   -- is spray coord modification active
-  func          =   applyShape      ,
+  active                    =   false       ,   -- is shape coord modification active
+  func                      =   applyShape  ,
+}
+
+
+SHAPE_2 = {
+  shape                     =   "line"      ,   -- shapes: "line", "rect", "rect45", "circle"
+  removeRememberedCoords    =   true        ,   -- "true": coord added to "lastCoords" is removed from the pipeline
+  connectShapes             =   true        ,   -- connectShapes: "true": coordlist index is only moved by 1 before the next shape is drawn
+                                                --                "false": uses coords only once, unused remainders are silently discarded
+
+  lastCoords                =   {}          ,   -- data: last selected points
+
+  active                    =   false       ,   -- is shape coord modification active
+  func                      =   applyShape  ,
 }
 
 
 --[[
   Coordinate modification order
   
-  Lua was not seemingly not able to add global function refs at the start (before definition?).
-  So the array is created here.
+  Lua was seemingly not able to add global function refs at the start (before definition?).
+  So the array and it's values are created here.
 
   @TheRedDaemon
 ]]--
 ACTIVE_TRANSFORMATIONS = {
    SHAPE        ,           -- 1. draw shape
    SPRAY        ,           -- 2. mess it up
-   MIRROR       ,           -- 3. mirror
-   MIRROR_2     ,           -- 4. second mirror
+   SHAPE_2      ,           -- 3. maybe create more complex shape
+   MIRROR       ,           -- 4. mirror
+   MIRROR_2     ,           -- 5. second mirror
 }
