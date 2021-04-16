@@ -85,37 +85,6 @@ Available commands:
 
 
 
--- /////////////////////
--- // config and data //
--- /////////////////////
-
-
--- @TheRedDaemon: Maybe using some config/data table would be beneficial?
-
-
--- mirror config
-MIRROR_MODE = "off" -- mirroring type: "off", "horizontal", "vertical", "diagonal_x", "diagonal_y", "point"
-MIRROR_MODE2 = "off" -- second mirroring type: same values as first
-MIRROR_ORDER = "coord" -- order of coordinates after mirroring: "shape", "coord"
-
-
--- brush config
-BRUSH_SPRAY = false -- is spray coord modification active
-BRUSH_SHAPE = false -- is shape coord modification active
-
-
--- spray config
-BRUSH_SPRAY_EXP = 3 -- defines how centered the random positions should be (higher -> more centered, should be bigger than 1)
-BRUSH_SPRAY_SIZE = 8 -- max spray deviation for both axes
-BRUSH_SPRAY_INT = 0.25 -- intensity -> 0 to 1, if random number bigger, skips the draw call
-
-
--- shape config
-BRUSH_SHAPE_SHAPE = "line" -- shapes: "line", "rect", "rect45", "circle" -- @TheRedDaemon: Not happy about the variable name. Suggestions?
--- shape data
-BRUSH_SHAPE_LAST = {} -- last selected points
-
-
 -- //////////////////////
 -- // helper functions //
 -- //////////////////////
@@ -204,12 +173,14 @@ end
 --[[
   Generates a random deviation for the spray brush.
   
+  "centeringExp" is the exponent used on a random value between 0 and 1. Higher values increase
+  the chance that the deviation is small and the resulting coord more centered. Should be 1 or bigger.
   Max deviation for both axes is set by "size".
   
   @TheRedDaemon
 ]]--
-function randomSprayDeviation(size)
-  local rand = round((math.random()^BRUSH_SPRAY_EXP) * size)
+function randomSprayDeviation(centeringExp, size)
+  local rand = round((math.random()^centeringExp) * size)
   rand = math.random() < 0.5 and -rand or rand -- plus or minus
   return rand
 end
@@ -412,6 +383,7 @@ function applyMirror(x, y, size, mirrorMode)
     SUGGESTION: "point" is also a rotation
     -> maybe add the ability to apply a point rotation to the action instead
       - so that I could mirror the action in 4 corners, or even 8
+      - center is between 199 and 200, so rotation likely requires translation by -199.5 before
   ]]--
   if mirrorMode == "point" then
     newx = (399 - x) - (size - 1)
@@ -453,35 +425,37 @@ end
   
   @TheRedDaemon
 ]]--
-function applyShape(coordlist, size)
-  if not BRUSH_SHAPE or isTableEmpty(coordlist) then
-    BRUSH_SHAPE_LAST = {} -- remove last entry if brush inactive (sadly happens on every call)
+function applyShape(config, coordlist, size)
+  if not config.shapeActive or isTableEmpty(coordlist) then
+    config.lastCoords = {} -- remove last entry if brush inactive (sadly happens on every call)
     return coordlist
   end
   
+  local refLastCoords = config.lastCoords
   local newCoordlist = {}
   local x = coordlist[1][1]
   local y = coordlist[1][2]
   
   -- currently no shape that takes three points, so this can be general
-  if isTableEmpty(BRUSH_SHAPE_LAST) then
-    BRUSH_SHAPE_LAST = {x,y}
+  if isTableEmpty(refLastCoords) then
+    config.lastCoords = {x,y}
     return newCoordlist -- skip drawing, only remember
   end
   
-  if BRUSH_SHAPE_SHAPE == "line" then
-    fillWithLineCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, newCoordlist)
-  elseif BRUSH_SHAPE_SHAPE == "rect" then
-    fillWithRectCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, newCoordlist)
-  elseif BRUSH_SHAPE_SHAPE == "rect45" then
-    fillWithRect45Coords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, newCoordlist)
-  elseif BRUSH_SHAPE_SHAPE == "circle" then
-    fillWithCircleCoords(BRUSH_SHAPE_LAST[1], BRUSH_SHAPE_LAST[2], x, y, newCoordlist)
+  local shape = config.shape
+  if shape == "line" then
+    fillWithLineCoords(refLastCoords[1], refLastCoords[2], x, y, newCoordlist)
+  elseif shape == "rect" then
+    fillWithRectCoords(refLastCoords[1], refLastCoords[2], x, y, newCoordlist)
+  elseif shape == "rect45" then
+    fillWithRect45Coords(refLastCoords[1], refLastCoords[2], x, y, newCoordlist)
+  elseif shape == "circle" then
+    fillWithCircleCoords(refLastCoords[1], refLastCoords[2], x, y, newCoordlist)
   else
-    print("No valid shape: " ..BRUSH_SHAPE_SHAPE)
+    print("No valid shape: " ..shape)
   end
   
-  BRUSH_SHAPE_LAST = {} -- remove point after shape was applied (or failed to do so)
+  config.lastCoords = {} -- remove point after shape was applied (or failed to do so)
   
   -- print("Number of coord duplicates after applying shape: " ..countCoordDuplicates(newCoordlist)) -- debug
   
@@ -492,24 +466,28 @@ end
 --[[
   Modifies all coords in coordlist by adding a random deviation.
   
-  If BRUSH_SPRAY_INT < 1, this function will build a new coordlist with the remaining coords. 
+  If config.sprayInt < 1, this function will build a new coordlist with the remaining coords. 
   Produces coordinate duplicates.
 
   @TheRedDaemon
 ]]--
-function applySpray(coordlist, size)
-  if not BRUSH_SPRAY then
+function applySpray(config, coordlist, size)
+  if not config.sprayActive then
     return coordlist
   end
   
-  if BRUSH_SPRAY_INT < 1 then
+  local sprayInt = config.sprayInt
+  local sprayExp = config.sprayExp
+  local spraySize = config.spraySize
+  
+  if sprayInt < 1 then
     local newCoordlist = {}
   
     for _, coord in ipairs(coordlist) do
-      -- only add coord if random number smaller then BRUSH_SPRAY_INT
-      if math.random() < BRUSH_SPRAY_INT then
-        coord[1] = coord[1] + randomSprayDeviation(BRUSH_SPRAY_SIZE)
-        coord[2] = coord[2] + randomSprayDeviation(BRUSH_SPRAY_SIZE)
+      -- only add coord if random number smaller then sprayInt
+      if math.random() < sprayInt then
+        coord[1] = coord[1] + randomSprayDeviation(sprayExp, spraySize)
+        coord[2] = coord[2] + randomSprayDeviation(sprayExp, spraySize)
         table.insert(newCoordlist, coord)
       end
     end
@@ -517,8 +495,8 @@ function applySpray(coordlist, size)
     coordlist = newCoordlist
   else
     for _, coord in ipairs(coordlist) do
-      coord[1] = coord[1] + randomSprayDeviation(BRUSH_SPRAY_SIZE)
-      coord[2] = coord[2] + randomSprayDeviation(BRUSH_SPRAY_SIZE)
+      coord[1] = coord[1] + randomSprayDeviation(sprayExp, spraySize)
+      coord[2] = coord[2] + randomSprayDeviation(sprayExp, spraySize)
     end
   end
   
@@ -552,42 +530,46 @@ end
   
   @gynt (original), @TheRedDaemon
 ]]--
-function applyMirrors(coordlist, size)
+function applyMirrors(config, coordlist, size)
   
-  if MIRROR_ORDER == "coord" then
+  local mirrorOrder = config.mirrorOrder
+  local mirrorMode = config.mirrorMode
+  local mirrorMode2 = config.mirrorMode2
+  
+  if mirrorOrder == "coord" then
     local newCoordTable = {}
     
     for _, coord in ipairs(coordlist) do
       table.insert(newCoordTable, coord)
     
-      if MIRROR_MODE ~= "off" then
-        local firstMirror = applyMirror(coord[1], coord[2], size, MIRROR_MODE)
+      if mirrorMode ~= "off" then
+        local firstMirror = applyMirror(coord[1], coord[2], size, mirrorMode)
         table.insert(newCoordTable, firstMirror)
         
-        if MIRROR_MODE2 ~= "off" then
-          table.insert(newCoordTable, applyMirror(coord[1], coord[2], size, MIRROR_MODE2))
-          table.insert(newCoordTable, applyMirror(firstMirror[1], firstMirror[2], size, MIRROR_MODE2))
+        if mirrorMode2 ~= "off" then
+          table.insert(newCoordTable, applyMirror(coord[1], coord[2], size, mirrorMode2))
+          table.insert(newCoordTable, applyMirror(firstMirror[1], firstMirror[2], size, mirrorMode2))
         end
       end
     end
     coordlist = newCoordTable
     
-  elseif MIRROR_ORDER == "shape" then
+  elseif mirrorOrder == "shape" then
   
-    if MIRROR_MODE ~= "off" then
+    if mirrorMode ~= "off" then
       local numberOfCoords = #coordlist -- @TheRedDaemon: Should only have number indexes, so this should be fine.
       for index = 1, numberOfCoords do
-        table.insert(coordlist, applyMirror(coordlist[index][1], coordlist[index][2], size, MIRROR_MODE))
+        table.insert(coordlist, applyMirror(coordlist[index][1], coordlist[index][2], size, mirrorMode))
       end
       
-      if MIRROR_MODE2 ~= "off" then
+      if mirrorMode2 ~= "off" then
         for index = 1, numberOfCoords * 2 do
-          table.insert(coordlist, applyMirror(coordlist[index][1], coordlist[index][2], size, MIRROR_MODE2))
+          table.insert(coordlist, applyMirror(coordlist[index][1], coordlist[index][2], size, mirrorMode2))
         end
       end
     end
   else
-    print("No valid mirror order: " ..MIRROR_ORDER)
+    print("No valid mirror order: " ..mirrorOrder)
   end
   
   -- print("Number of coord duplicates after applying mirrors: " ..countCoordDuplicates(coordlist)) -- debug
@@ -660,8 +642,8 @@ function applyCoordModification(x, y, size)
   -- print("Current Coord: " ..x ..":" ..y) -- debug
   
   local coordinatelist = {{x, y}}
-  for _, func in ipairs(ACTIVE_TRANSFORMATIONS) do -- ipairs to guarantee order
-    coordinatelist = func(coordinatelist, size)
+  for _, config in ipairs(ACTIVE_TRANSFORMATIONS) do -- ipairs to guarantee order
+    coordinatelist = config.func(config, coordinatelist, size)
   end
   
   -- print("Total number of coords: " ..getTableLength(coordinatelist)) -- debug
@@ -732,9 +714,40 @@ end
 
 
 
--- ///////////////////////
--- // additional config //
--- ///////////////////////
+-- /////////////////////
+-- // config and data //
+-- /////////////////////
+
+
+-- @TheRedDaemon: Currently everything but "func" is named differently. Would it make sense to find more common variables?
+
+MIRROR = {
+  mirrorMode    =   "off"           ,   -- mirroring type: "off", "horizontal", "vertical", "diagonal_x", "diagonal_y", "point"
+  mirrorMode2   =   "off"           ,   -- second mirroring type: same values as first
+  mirrorOrder   =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
+
+  func          =   applyMirrors    ,
+}
+
+
+SPRAY = {
+  sprayActive   =   false           ,   -- is spray coord modification active
+  sprayExp      =   3               ,   -- defines how centered the random positions should be (higher -> more centered, should be bigger than 1)
+  spraySize     =   8               ,   -- max spray deviation for both axes
+  sprayInt      =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
+
+  func          =   applySpray      ,   
+}
+
+
+SHAPE = {
+  shapeActive   =   false           ,   -- is spray coord modification active
+  shape         =   "line"          ,   -- shapes: "line", "rect", "rect45", "circle" -- @TheRedDaemon: Not happy about the variable name. Suggestions?
+
+  lastCoords    =   {}              ,   -- data: last selected points
+
+  func          =   applyShape      ,
+}
 
 
 --[[
@@ -746,7 +759,7 @@ end
   @TheRedDaemon
 ]]--
 ACTIVE_TRANSFORMATIONS = {
-   applyShape,              -- 1. draw shape
-   applySpray,              -- 2. mess it up
-   applyMirrors             -- 3. mirror
+   SHAPE,               -- 1. draw shape
+   SPRAY,               -- 2. mess it up
+   MIRROR               -- 3. mirror
 }
