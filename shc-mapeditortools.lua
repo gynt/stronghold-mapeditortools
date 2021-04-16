@@ -372,6 +372,23 @@ end
 -- // mirror support //
 
 
+--[[
+  Checks if the "mirrorMode" is supported.
+  If not, returns "false" and sends message to console.
+
+  @TheRedDaemon
+]]--
+function isValidMirrorMode(mirrorMode)
+  if mirrorMode == "point" or mirrorMode == "horizontal" or mirrorMode == "vertical" or
+      mirrorMode == "diagonal_x" or mirrorMode == "diagonal_y" then
+    return true
+  else
+    print("Don't know this mirror mode: " .. mirrorMode)
+    return false
+  end
+end
+
+
 -- @gynt
 function applyMirror(x, y, size, mirrorMode)
   local newx = x
@@ -384,6 +401,8 @@ function applyMirror(x, y, size, mirrorMode)
     -> maybe add the ability to apply a point rotation to the action instead
       - so that I could mirror the action in 4 corners, or even 8
       - center is between 199 and 200, so rotation likely requires translation by -199.5 before
+      - Note -> do not forget to also use "size" for this rotations in some way; it is ignored by
+                other modifications so far...
   ]]--
   if mirrorMode == "point" then
     newx = (399 - x) - (size - 1)
@@ -400,9 +419,9 @@ function applyMirror(x, y, size, mirrorMode)
   elseif mirrorMode == "diagonal_y" then
     newx = 399 - x - (size - 1)
     newy = y
-  else
-    print("Don't know this MIRROR_MODE: " .. mirrorMode)
   end
+  -- @TheRedDaemon: Fails silently to not clutter the console.
+  
   return {newx, newy}
 end
 
@@ -426,7 +445,7 @@ end
   @TheRedDaemon
 ]]--
 function applyShape(config, coordlist, size)
-  if not config.shapeActive or isTableEmpty(coordlist) then
+  if not config.active or isTableEmpty(coordlist) then
     config.lastCoords = {} -- remove last entry if brush inactive (sadly happens on every call)
     return coordlist
   end
@@ -472,7 +491,7 @@ end
   @TheRedDaemon
 ]]--
 function applySpray(config, coordlist, size)
-  if not config.sprayActive then
+  if not config.active or isTableEmpty(coordlist) then
     return coordlist
   end
   
@@ -514,62 +533,46 @@ end
   The order types are shown here, using an example where the shape "line" is used to draw a 3 coord line,
   which is then mirrored two times (first with vertical mirror, then horizontal):
   
-   1     |     4                 1     |     4                 1     |     2
-    2    |    7                   2    |    5                   5    |    6  
-     3   |  10                     3   |   6                     9   |  10   
+   1     |     4                 1     |     4                 1     |     3
+    2    |    7                   2    |    5                   5    |    7  
+     3   |  10                     3   |   6                     9   |  11   
   _______|_______               _______|_______               _______|_______
          |                             |                             |       
-     11  |  12                     9   |  12                     11  |  12   
-    8    |    9                   8    |    11                  7    |    8  
-   5     |     6                 7     |     10                3     |     4 
+     11  |  12                     9   |  12                     10  |  12   
+    8    |    9                   8    |    11                  6    |    8  
+   5     |     6                 7     |     10                2     |     4 
    
   original order                ordered by original shape     ordered by original coordinates
-  (not supported anymore)       MIRROR_ORDER: "shape"         MIRROR_ORDER: "coord"
+  (not supported anymore)       .coordOrder(both): "shape"    .coordOrder(both): "coord"
   
   Produces coordinate duplicates.
   
   @gynt (original), @TheRedDaemon
 ]]--
 function applyMirrors(config, coordlist, size)
-  
-  local mirrorOrder = config.mirrorOrder
   local mirrorMode = config.mirrorMode
-  local mirrorMode2 = config.mirrorMode2
+  if not config.active or isTableEmpty(coordlist) or not isValidMirrorMode(mirrorMode) then
+    return coordlist
+  end
+  local coordOrder = config.coordOrder
   
-  if mirrorOrder == "coord" then
+  if coordOrder == "coord" then
     local newCoordTable = {}
     
     for _, coord in ipairs(coordlist) do
       table.insert(newCoordTable, coord)
-    
-      if mirrorMode ~= "off" then
-        local firstMirror = applyMirror(coord[1], coord[2], size, mirrorMode)
-        table.insert(newCoordTable, firstMirror)
-        
-        if mirrorMode2 ~= "off" then
-          table.insert(newCoordTable, applyMirror(coord[1], coord[2], size, mirrorMode2))
-          table.insert(newCoordTable, applyMirror(firstMirror[1], firstMirror[2], size, mirrorMode2))
-        end
-      end
+      table.insert(newCoordTable, applyMirror(coord[1], coord[2], size, mirrorMode))
     end
     coordlist = newCoordTable
     
-  elseif mirrorOrder == "shape" then
-  
-    if mirrorMode ~= "off" then
-      local numberOfCoords = #coordlist -- @TheRedDaemon: Should only have number indexes, so this should be fine.
-      for index = 1, numberOfCoords do
-        table.insert(coordlist, applyMirror(coordlist[index][1], coordlist[index][2], size, mirrorMode))
-      end
-      
-      if mirrorMode2 ~= "off" then
-        for index = 1, numberOfCoords * 2 do
-          table.insert(coordlist, applyMirror(coordlist[index][1], coordlist[index][2], size, mirrorMode2))
-        end
-      end
+  elseif coordOrder == "shape" then
+    local numberOfCoords = #coordlist -- @TheRedDaemon: Should only have number indexes, so this should be fine.
+    
+    for index = 1, numberOfCoords do
+      table.insert(coordlist, applyMirror(coordlist[index][1], coordlist[index][2], size, mirrorMode))
     end
   else
-    print("No valid mirror order: " ..mirrorOrder)
+    print("No valid coordinate order: " ..coordOrder)
   end
   
   -- print("Number of coord duplicates after applying mirrors: " ..countCoordDuplicates(coordlist)) -- debug
@@ -635,6 +638,8 @@ end
 
 --[[
   General function to create coordinatelist.
+  
+  WARNING: The only coordinate modification so far that respects "size" is "applyMirror".
   
   @TheRedDaemon 
 ]]--
@@ -719,33 +724,43 @@ end
 -- /////////////////////
 
 
--- @TheRedDaemon: Currently everything but "func" is named differently. Would it make sense to find more common variables?
+-- @TheRedDaemon: Would it make sense to find more common variables than "func" and "active"?
 
 MIRROR = {
-  mirrorMode    =   "off"           ,   -- mirroring type: "off", "horizontal", "vertical", "diagonal_x", "diagonal_y", "point"
-  mirrorMode2   =   "off"           ,   -- second mirroring type: same values as first
-  mirrorOrder   =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
+  mirrorMode    =   "horizontal"    ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point"
+  coordOrder    =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
 
+  active        =   false           ,   -- is mirror active; equal to former mirrorMode = "off"
+  func          =   applyMirrors    ,
+}
+
+
+-- second mirror
+MIRROR_2 = {
+  mirrorMode    =   "vertical"      ,
+  coordOrder    =   "coord"         ,
+
+  active        =   false           ,
   func          =   applyMirrors    ,
 }
 
 
 SPRAY = {
-  sprayActive   =   false           ,   -- is spray coord modification active
   sprayExp      =   3               ,   -- defines how centered the random positions should be (higher -> more centered, should be bigger than 1)
   spraySize     =   8               ,   -- max spray deviation for both axes
   sprayInt      =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
 
+  active        =   false           ,   -- is spray coord modification active
   func          =   applySpray      ,   
 }
 
 
 SHAPE = {
-  shapeActive   =   false           ,   -- is spray coord modification active
   shape         =   "line"          ,   -- shapes: "line", "rect", "rect45", "circle" -- @TheRedDaemon: Not happy about the variable name. Suggestions?
 
   lastCoords    =   {}              ,   -- data: last selected points
 
+  active        =   false           ,   -- is spray coord modification active
   func          =   applyShape      ,
 }
 
@@ -759,7 +774,8 @@ SHAPE = {
   @TheRedDaemon
 ]]--
 ACTIVE_TRANSFORMATIONS = {
-   SHAPE,               -- 1. draw shape
-   SPRAY,               -- 2. mess it up
-   MIRROR               -- 3. mirror
+   SHAPE        ,           -- 1. draw shape
+   SPRAY        ,           -- 2. mess it up
+   MIRROR       ,           -- 3. mirror
+   MIRROR_2     ,           -- 4. second mirror
 }
