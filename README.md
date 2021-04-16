@@ -2,7 +2,8 @@
 Map Editor Tool Set for Stronghold (in the future) and Stronghold Crusader
 
 ## Features
-Make your custom maps symmetrical by mirroring every action in the map editor.
+Make your custom maps symmetrical by mirroring every action in the map editor.  
+Or use brush-modifiers to either deviate the position of the current selected action in spray-like manner or apply multiple types of shapes.
 
 ## Installation instructions
 1. Download the files from this repository for your version of Stronghold (currently only Stronghold Crusader 1.41 is supported)
@@ -13,7 +14,7 @@ Make your custom maps symmetrical by mirroring every action in the map editor.
 When starting up the game, you will get your normal game window, and an extra console window. You can run LUA code in this console window. Type `help` to see the instructions for changing the active mirror mode and more.
 
 ## Modification instructions
-To modify the way mirroring is done, modify the `shc-mapeditortools.lua` file.
+To modify the way mirroring is done or other drawing behaviors, modify the `shc-mapeditortools.lua` file.
 
 ## Copyright
 ```
