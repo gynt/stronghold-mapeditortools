@@ -765,61 +765,128 @@ end
 -- /////////////////////
 
 
--- @TheRedDaemon: Would it make sense to find more common variables than "func" and "active"?
+--[[
+  Create default modification configurations using simple LUA OOP.
+  Source: https://www.lua.org/pil/16.2.html
 
-MIRROR = {
-  mirrorMode    =   "horizontal"    ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point"
-  coordOrder    =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
+  Wrapped it in different scope to also test scoping and function assign.
+  This can be changed.
 
-  active        =   false           ,   -- is mirror active; equal to former mirrorMode = "off"
-  func          =   applyMirrors    ,
-}
-
-
--- second mirror
-MIRROR_2 = {
-  mirrorMode    =   "vertical"      ,
-  coordOrder    =   "coord"         ,
-
-  active        =   false           ,
-  func          =   applyMirrors    ,
-}
-
-
-SPRAY = {
-  sprayExp      =   3               ,   -- defines how centered the random positions should be (higher -> more centered, should be bigger than 1)
-  spraySize     =   8               ,   -- max spray deviation for both axes
-  sprayInt      =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
-
-  active        =   false           ,   -- is spray coord modification active
-  func          =   applySpray      ,   
-}
-
-
-SHAPE = {
-  shape                     =   "line"      ,   -- shapes: "line", "rect", "rect45", "circle"
-  removeRememberedCoords    =   true        ,   -- "true": coord added to "lastCoords" is removed from the pipeline
-  connectShapes             =   false       ,   -- connectShapes: "true": coordlist index is only moved by 1 before the next shape is drawn
-                                                --                "false": uses coords only once, unused remainders are silently discarded
-
-  lastCoords                =   {}          ,   -- data: last selected points
-
-  active                    =   false       ,   -- is shape coord modification active
-  func                      =   applyShape  ,
-}
+  @TheRedDaemon
+]]--
+ConfigConstructor = {} -- default constructors
+do
+  
+  
+  --[[
+    Create default configuration base table.
+  
+    @TheRedDaemon
+  ]]--
+  local DefaultBase = {
+    active      =   false                 ,   -- is the modification active
+  }
+  
+  
+  --[[
+    Add dummy "func" to "DefaultBase".
+    Executed if func in config not set. Returns "coordinatelist" unchanged.
+  
+    @TheRedDaemon
+  ]]--
+  function DefaultBase.func(config, coordinatelist, size)
+    print("Noticed config without a valid function. No changes to coords.")
+    return coordinatelist
+  end
 
 
-SHAPE_2 = {
-  shape                     =   "line"      ,   -- shapes: "line", "rect", "rect45", "circle"
-  removeRememberedCoords    =   true        ,   -- "true": coord added to "lastCoords" is removed from the pipeline
-  connectShapes             =   true        ,   -- connectShapes: "true": coordlist index is only moved by 1 before the next shape is drawn
-                                                --                "false": uses coords only once, unused remainders are silently discarded
+  --[[
+    Constructs new object (or class, there does not seem to be a difference) from the default base values.
+    "fields" is a table that can already provide values that extend the object or override functions.
+  
+    @TheRedDaemon
+  ]]--
+  function DefaultBase:new(fields)
+    fields = fields or {}
+    setmetatable(fields, self)
+    self.__index = self
+    return fields
+  end
 
-  lastCoords                =   {}          ,   -- data: last selected points
 
-  active                    =   false       ,   -- is shape coord modification active
-  func                      =   applyShape  ,
-}
+  -- @TheRedDaemon: Create default configuration tables:
+
+
+  local DefaultShape = DefaultBase:new{
+    shape                   =   "line"          ,   -- shapes: "line", "rect", "rect45", "circle"
+    removeRememberedCoords  =   true            ,   -- "true": coord added to "lastCoords" is removed from the pipeline
+    connectShapes           =   false           ,   -- connectShapes: "true": coordlist index is only moved by 1 before the next shape is drawn
+                                                    --                "false": uses coords only once, unused remainders are silently discarded
+                            
+    lastCoords              =   {}              ,   -- data: last selected points
+                            
+    func                    =   applyShape      ,
+  }
+  
+  
+  local DefaultMirror = DefaultBase:new{
+    mirrorMode  =   "horizontal"    ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point"
+    coordOrder  =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
+    
+    func        =   applyMirrors    ,
+  }
+  
+  
+  local DefaultSpray = DefaultBase:new{
+    sprayExp    =   3               ,   -- defines how centered the random positions should be (higher -> more centered, should be bigger than 1)
+    spraySize   =   8               ,   -- max spray deviation for both axes
+    sprayInt    =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
+    
+    func        =   applySpray      ,
+  }
+
+
+  -- Add the default new functions to "ConfigConstructor":
+  
+  
+  -- @TheRedDaemon 
+  function ConfigConstructor.newBaseConfig(fields)
+    return DefaultBase:new(fields)
+  end
+  
+  
+  -- @TheRedDaemon
+  function ConfigConstructor.newSprayConfig(fields)
+    return DefaultSpray:new(fields)
+  end
+  
+  
+  -- @TheRedDaemon
+  function ConfigConstructor.newShapeConfig(fields)
+    return DefaultShape:new(fields)
+  end
+  
+  
+  -- @TheRedDaemon
+  function ConfigConstructor.newMirrorConfig(fields)
+    return DefaultMirror:new(fields)
+  end
+end
+
+
+-- @TheRedDaemon: Create modification configurations:
+
+
+MIRROR = ConfigConstructor.newMirrorConfig()
+
+-- @TheRedDaemon: Second mirror. Sends table with from default deviating value.
+MIRROR_2 = ConfigConstructor.newMirrorConfig{ mirrorMode = "vertical" }
+
+SPRAY = ConfigConstructor.newSprayConfig()
+
+SHAPE = ConfigConstructor.newShapeConfig()
+
+SHAPE_2 = ConfigConstructor.newShapeConfig{ connectShapes = true }
 
 
 --[[
