@@ -850,7 +850,8 @@ end
 --[[
   General function to create coordinatelist.
   
-  WARNING: The only coordinate modification so far that respects "size" is "applyMirror".
+  WARNING: The only coordinate modifications so far that respect "size"
+           are "applyMirror" and "applyRotationMirror".
   
   @TheRedDaemon 
 ]]--
