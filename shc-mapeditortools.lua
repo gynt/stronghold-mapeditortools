@@ -66,7 +66,23 @@ The following features are implemented and currently applied in the order they a
         Integer             whole numbers
     
     SPRAY.sprayInt -> intensity; if random number bigger, skips the draw call
-        Float               value between 0 to 1, inclusive   
+        Float               value between 0 to 1, inclusive
+        
+    SPRAY.keepOriginalCoord -> also use the original coordinate
+        boolean             false or true
+        
+    SPRAY.sprayIntMode -> where Intensity is used; only used if "SPRAY.keepOriginalCoord = true"
+        "deviated"          effects the deviated coords; original are always applied
+        "original"          effects the original coords; deviated are always applied
+        "both"              effects both coords independent from each other
+        "together"          either both or none are applied
+        "separator"         intensity applies to deviated; uses original if deviated is not used
+    
+    SPRAY.coordOrder -> order of coordinates after spraying; only used if "SPRAY.keepOriginalCoord = true"
+        "original"          all original first
+        "deviated"          all deviated first
+        "coordOriginal"     if both are applied, first original, then deviated    
+        "coordDeviated"     if both are applied, first deviated, then original
 
     ## Shape Brush 2 ##
     Functions like "Shape Brush", but instead of "SHAPE", the feature name is "SHAPE_2".
@@ -525,9 +541,12 @@ end
 
 
 --[[
-  Modifies all coords in coordlist by adding a random deviation.
+  Modifies coords in coordlist by adding a random deviation.
   
-  If config.sprayInt < 1, this function will build a new coordlist with the remaining coords. 
+  If config.sprayInt < 1 or config.keepOriginalCoord, this function will build
+  a new coordlist with the remaining coords.
+  For a description of the config parameters see default values or HELP text.
+  
   Produces coordinate duplicates.
 
   @TheRedDaemon
@@ -541,23 +560,113 @@ function applySpray(config, coordlist, size)
   local sprayExp = config.sprayExp
   local spraySize = config.spraySize
   
-  if sprayInt < 1 then
-    local newCoordlist = {}
-  
-    for _, coord in ipairs(coordlist) do
-      -- only add coord if random number smaller then sprayInt
-      if math.random() < sprayInt then
-        coord[1] = coord[1] + randomSprayDeviation(sprayExp, spraySize)
-        coord[2] = coord[2] + randomSprayDeviation(sprayExp, spraySize)
-        table.insert(newCoordlist, coord)
+  -- requires more complicated algorithm
+  if config.keepOriginalCoord then
+    local sprayIntMode = config.sprayIntMode
+    local coordOrder = config.coordOrder
+    local intOnOrig = sprayIntMode == "original" or sprayIntMode == "both"
+    local intOnDev = sprayIntMode ~= "original" -- always needed, except when "original"
+    
+    if not (coordOrder == "coordOriginal" or coordOrder == "coordDeviated" or
+        coordOrder == "original" or coordOrder == "deviated") then
+      print("No valid coordOrder for spray: " ..coordOrder)
+      return coordlist
+    end
+    
+    if not (intOnOrig or sprayIntMode == "together" or
+        sprayIntMode == "deviated" or sprayIntMode == "separator") then
+      print("No valid sprayIntMode for spray: " ..sprayIntMode)
+      return coordlist
+    end
+    
+    local keepOriginFunc
+    if sprayIntMode == "together" then
+      keepOriginFunc = function(keepDev)
+        return keepDev
+      end
+    elseif sprayIntMode == "separator" then
+      keepOriginFunc = function(keepDev)
+        return not keepDev
+      end
+    else
+      keepOriginFunc = function(keepDev)
+        return not intOnOrig or math.random() < sprayInt
       end
     end
     
-    coordlist = newCoordlist
-  else
+    local originalCoords = {}
+    local deviatedCoords = (coordOrder == "coordOriginal" or
+        coordOrder == "coordDeviated") and originalCoords or {}
+    
+    -- switches coords apply order for "coordDeviated"
+    local coordAddFunc
+    if coordOrder == "coordDeviated" then
+      coordAddFunc = function(origCoord, devCoord)
+        if devCoord ~= nil then
+          table.insert(deviatedCoords, devCoord)
+        end
+        if origCoord ~= nil then
+          table.insert(originalCoords, origCoord)
+        end
+      end
+    else
+      coordAddFunc = function(origCoord, devCoord)
+        if origCoord ~= nil then
+          table.insert(originalCoords, origCoord)
+        end
+        if devCoord ~= nil then
+          table.insert(deviatedCoords, devCoord)
+        end
+      end
+    end
+    
     for _, coord in ipairs(coordlist) do
-      coord[1] = coord[1] + randomSprayDeviation(sprayExp, spraySize)
-      coord[2] = coord[2] + randomSprayDeviation(sprayExp, spraySize)
+      local keepDev = not intOnDev or math.random() < sprayInt 
+      local keepOrigin = keepOriginFunc(keepDev)
+    
+      local origCoord = keepOrigin and coord or nil
+      local devCoord = keepDev and {
+            coord[1] + randomSprayDeviation(sprayExp, spraySize),
+            coord[2] + randomSprayDeviation(sprayExp, spraySize)
+          } or nil
+
+      coordAddFunc(origCoord, devCoord)
+    end
+    
+    -- add coords if not already one table
+    if coordOrder == "original" then
+      for _, coord in ipairs(deviatedCoords) do
+        table.insert(originalCoords, coord)
+      end
+    elseif coordOrder == "deviated" then
+      for _, coord in ipairs(originalCoords) do
+        table.insert(deviatedCoords, coord)
+      end
+      
+      originalCoords = deviatedCoords
+    end
+    
+    coordlist = originalCoords
+  else
+    -- "sprayIntMode" or "coordOrder" only has an effect if original is kept
+    if sprayInt < 1 then
+      local newCoordlist = {}
+    
+      for _, coord in ipairs(coordlist) do
+        -- only add coord if random number smaller then sprayInt
+        if math.random() < sprayInt then
+          coord[1] = coord[1] + randomSprayDeviation(sprayExp, spraySize)
+          coord[2] = coord[2] + randomSprayDeviation(sprayExp, spraySize)
+          table.insert(newCoordlist, coord)
+        end
+      end
+      
+      coordlist = newCoordlist
+    else
+      for _, coord in ipairs(coordlist) do
+        coord[1] = coord[1] + randomSprayDeviation(sprayExp, spraySize)
+        coord[2] = coord[2] + randomSprayDeviation(sprayExp, spraySize)
+      end
     end
   end
   
@@ -838,11 +947,14 @@ do
   
   
   local DefaultSpray = DefaultBase:new{
-    sprayExp    =   3               ,   -- defines how centered the random positions should be (higher -> more centered, should be bigger than 1)
-    spraySize   =   8               ,   -- max spray deviation for both axes
-    sprayInt    =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
+    sprayExp            =   3               ,   -- higher -> more centered, should be bigger than 1
+    spraySize           =   8               ,   -- max spray deviation for both axes
+    sprayInt            =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
+    keepOriginalCoord   =   false           ,   -- "true": also applies the original coord alongside the deviated
+    sprayIntMode        =   "both"          ,   -- effect of Int on: "deviated", "original", "both", "together", "separator"
+    coordOrder          =   "original"      ,   -- which coords are applied first: "original", "deviated", "coordOriginal", "coordDeviated"
     
-    func        =   applySpray      ,
+    func                =   applySpray      ,
   }
 
 
