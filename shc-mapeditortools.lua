@@ -70,6 +70,26 @@ The following features are implemented and currently applied in the order they a
 
     ## Shape Brush 2 ##
     Functions like "Shape Brush", but instead of "SHAPE", the feature name is "SHAPE_2".
+    
+    ## Rotation Mirroring ##
+    Mirrors the actions around a defined center.
+    The number of requested actions is evenly placed on a circle.
+    
+    ROTATION.active -> deactivate/activate
+        boolean             false or true
+    
+    ROTATION.numberOfPoints -> number of actions to place around the center
+        Integer             1 or bigger; 2 equals old 'Mirroring'.mirrorMode = "point"
+    
+    ROTATION.rotationCenterX -> x-coordinate of the rotation center
+        Integer             map is 400x400; the center is 200
+    
+    ROTATION.rotationCenterY -> y-coordinate of the rotation center
+        Integer             map is 400x400; the center is 200
+    
+    ROTATION.coordOrder -> order of coordinates after mirroring
+        "shape"             draws original shape first, then the mirrored points
+        "coord"             every single coordinate of the original shape is mirrored one after another
 
     ## Mirroring ##
     Actions are mirrored around one axis.
@@ -82,7 +102,7 @@ The following features are implemented and currently applied in the order they a
         "vertical"
         "diagonal_x"
         "diagonal_y"
-        "point"             mirror around the center of the map
+        "point"             mirror around the center of the map; kept for legacy; might be faster
         
     MIRROR.coordOrder -> order of coordinates after mirroring
         "shape"             draws original shape first, then the mirror
@@ -410,16 +430,6 @@ function applyMirror(x, y, size, mirrorMode)
   local newx = x
   local newy = y
   
-  --[[
-    @TheRedDaemon:
-  
-    SUGGESTION: "point" is also a rotation
-    -> maybe add the ability to apply a point rotation to the action instead
-      - so that I could mirror the action in 4 corners, or even 8
-      - center is between 199 and 200, so rotation likely requires translation by -199.5 before
-      - Note -> do not forget to also use "size" for this rotations in some way; it is ignored by
-                other modifications so far...
-  ]]--
   if mirrorMode == "point" then
     newx = (399 - x) - (size - 1)
     newy = (399 - y) - (size - 1)
@@ -617,6 +627,87 @@ function applyMirrors(config, coordlist, size)
   end
   
   -- print("Number of coord duplicates after applying mirrors: " ..countCoordDuplicates(coordlist)) -- debug
+  
+  return coordlist
+end
+
+
+--[[
+  Mirrors the coordinates around a defined center using rotation.
+  The coordinates are applied clockwise.
+  
+  For explanation "coordOrder" see "applyMirrors".
+  Produces coordinate duplicates.
+  
+  source: https://en.wikipedia.org/wiki/Rotation_matrix
+
+  @TheRedDaemon
+]]--
+function applyRotationMirror(config, coordlist, size)
+  local numberOfPoints = config.numberOfPoints
+  if not config.active or isTableEmpty(coordlist) or numberOfPoints < 2 then
+    return coordlist
+  end
+  
+  local coordOrder = config.coordOrder
+  if not (coordOrder == "coord" or coordOrder == "shape") then
+    print("No valid coordinate order: " ..coordOrder)
+    return coordlist
+  end
+  
+  -- create transformation values
+  local translationX = config.rotationCenterX - size / 2.0
+  local translationY = config.rotationCenterY - size / 2.0
+  local sinValues = {}
+  local cosValues = {}
+  local rotationAngle = 2 * math.pi / numberOfPoints
+  for index = 1, numberOfPoints - 1 do
+    table.insert(sinValues, math.sin(rotationAngle * index))
+    table.insert(cosValues, math.cos(rotationAngle * index))
+  end
+  
+  if coordOrder == "coord" then
+    local newCoordTable = {}
+    
+    for _, coord in ipairs(coordlist) do
+      local centeredX = coord[1] - translationX
+      local centeredY = coord[2] - translationY
+    
+      table.insert(newCoordTable, coord)
+      for rotIndex = 1, numberOfPoints - 1 do
+        table.insert(newCoordTable, {
+          round(centeredX * cosValues[rotIndex] 
+            - centeredY * sinValues[rotIndex] + translationX),
+          round(centeredX * sinValues[rotIndex]
+            + centeredY * cosValues[rotIndex] + translationY)
+        })
+      end
+    end
+    coordlist = newCoordTable
+    
+  elseif coordOrder == "shape" then
+    local numberOfCoords = #coordlist
+    
+    for rotIndex = 1, numberOfPoints - 1 do
+      for coordIndex = 1, #coordlist do
+        local centeredX = coordlist[coordIndex][1] - translationX
+        local centeredY = coordlist[coordIndex][2] - translationY
+      
+        table.insert(coordlist, {
+          round(centeredX * cosValues[rotIndex] 
+            - centeredY * sinValues[rotIndex] + translationX),
+          round(centeredX * sinValues[rotIndex]
+            + centeredY * cosValues[rotIndex] + translationY)
+        })
+      end
+    end
+  end
+  
+  for _, coord in ipairs(coordlist) do
+    print(coord[1] ..":" ..coord[2])
+  end
+  
+  -- print("Number of coord duplicates after applying rotation mirrors: " ..countCoordDuplicates(coordlist)) -- debug
   
   return coordlist
 end
@@ -844,6 +935,16 @@ do
     
     func        =   applySpray      ,
   }
+  
+  
+  local DefaultRotationMirror = DefaultBase:new{
+    numberOfPoints  =   2                   ,   -- how many points will be the result (mirrors = numberOfPoints - 1)
+    rotationCenterX =   200                 ,   -- x-coordinate of the rotation center
+    rotationCenterY =   200                 ,   -- y-coordinate of the rotation center
+    coordOrder      =   "coord"             ,   -- order of coordinates after mirroring: "shape", "coord"
+    
+    func            =   applyRotationMirror ,
+  }
 
 
   -- Add the default new functions to "ConfigConstructor":
@@ -871,6 +972,12 @@ do
   function ConfigConstructor.newMirrorConfig(fields)
     return DefaultMirror:new(fields)
   end
+  
+  
+  -- @TheRedDaemon
+  function ConfigConstructor.newRotationMirrorConfig(fields)
+    return DefaultRotationMirror:new(fields)
+  end
 end
 
 
@@ -888,6 +995,8 @@ SHAPE = ConfigConstructor.newShapeConfig()
 
 SHAPE_2 = ConfigConstructor.newShapeConfig{ connectShapes = true }
 
+ROTATION = ConfigConstructor.newRotationMirrorConfig()
+
 
 --[[
   Coordinate modification order
@@ -901,6 +1010,7 @@ ACTIVE_TRANSFORMATIONS = {
    SHAPE        ,           -- 1. draw shape
    SPRAY        ,           -- 2. mess it up
    SHAPE_2      ,           -- 3. maybe create more complex shape
+   ROTATION     ,           -- 4. mirror using rotation
    MIRROR       ,           -- 4. mirror
    MIRROR_2     ,           -- 5. second mirror
 }
