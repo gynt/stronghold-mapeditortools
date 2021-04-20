@@ -33,6 +33,36 @@ WARNING: Currently max 200 actions are supported. Big shapes, especially when mi
 
 The following features are implemented and currently applied in the order they are mentioned:
 
+    ## Tracing ##
+    Useful to check some values.
+    
+    TRACING.active -> deactivate/activate
+        boolean             false or true
+    
+    TRACING.printTracingName -> should the tracing name be printed
+        boolean             false or true
+    
+    TRACING.tracingName -> name printed on execution
+        String              some word, like "Tree"
+    
+    TRACING.printFirstCoord -> print the first received coordinate; in case of TRACING click coord
+        boolean             false or true
+    
+    TRACING.printAllCoords -> prints all coordinates
+        boolean             false or true
+  
+    TRACING.printNumberOfCoords -> count the number of coordinates and print it
+        boolean             false or true
+    
+    TRACING.printNumberOfDuplicates -> count the number of duplicates and print it
+        boolean             false or true
+    
+    TRACING.printDuplicates -> print all duplicates; requires TRACING.printNumberOfDuplicates = true  
+        boolean             false or true
+    
+    TRACING.devourCoords -> delete all coordinates from the pipeline after the check
+        boolean             false or true
+
     ## Shape Brush ##
     Uses the coordinates of two clicks (the first one does nothing) to create a shape.
     WARNING: The first coordinate is only invalidated after use or after disabling the shape brush.
@@ -112,6 +142,9 @@ The following features are implemented and currently applied in the order they a
     Functions like "Mirroring", but instead of "MIRROR", the feature name is "MIRROR_2".
     Allows to apply a second mirror.
     Using the same mirror mode twice however will only apply the original coordinates a second time.
+    
+    ## Tracing 2 ##
+    Functions like "Tracing", but instead of "TRACING", the feature name is "TRACING_2".
 
 Available commands:
         help                display this help text again
@@ -188,7 +221,7 @@ function countCoordDuplicates(coordTable, display)
         numberOfDuplicates = numberOfDuplicates + 1
       
         if display then
-          print("Duplicate found: " ..coordOne[1] ..":" ..coordOne[2])
+          print("        Duplicate found: " ..coordOne[1] ..":" ..coordOne[2])
         end
       end
     end
@@ -703,11 +736,57 @@ function applyRotationMirror(config, coordlist, size)
     end
   end
   
-  for _, coord in ipairs(coordlist) do
-    print(coord[1] ..":" ..coord[2])
+  -- print("Number of coord duplicates after applying rotation mirrors: " ..countCoordDuplicates(coordlist)) -- debug
+  
+  return coordlist
+end
+
+
+--[[
+  Provides some tracing functions.
+  
+  Check the HELP text or the default configuration for more information.
+
+  @TheRedDaemon
+]]--
+function applyTracing(config, coordlist, size)
+  if not config.active then
+    return coordlist
   end
   
-  -- print("Number of coord duplicates after applying rotation mirrors: " ..countCoordDuplicates(coordlist)) -- debug
+  if config.printTracingName then
+    print(config.tracingName ..":")
+  end
+  
+  if config.printFirstCoord then
+    if isTableEmpty(coordlist) then
+      print("    No coordinates. Can not print first.")
+    else
+      print("    First Coordinate: " ..coordlist[1][1] ..":" ..coordlist[1][2])
+    end
+  end
+  
+  if config.printAllCoords then
+    if isTableEmpty(coordlist) then
+      print("        No coordinates.")
+    else
+      for index, coord in ipairs(coordlist) do
+        print("        Coordinate " ..index ..": " ..coord[1] ..":" ..coord[2])
+      end
+    end
+  end
+  
+  if config.printNumberOfCoords then
+    print("    Total number of coordinates: " ..getTableLength(coordlist))
+  end
+  
+  if config.printNumberOfDuplicates then
+    print("    Number of coordinate duplicates: " ..countCoordDuplicates(coordlist, config.printDuplicates))
+  end
+  
+  if config.devourCoords then
+    coordlist = {}
+  end
   
   return coordlist
 end
@@ -945,6 +1024,20 @@ do
     
     func            =   applyRotationMirror ,
   }
+  
+  
+  local DefaultTracing = DefaultBase:new{
+    printTracingName        =   false           ,   -- should the tracing name be printed
+    tracingName             =   "Tracing"       ,   -- name printed on execution
+    printFirstCoord         =   false           ,   -- print the first coord in the coordlist, equal to click if utility first
+    printAllCoords          =   false           ,   -- prints all coords
+    printNumberOfCoords     =   false           ,   -- count the number of coords and print it
+    printNumberOfDuplicates =   false           ,   -- count the number of duplicates and print it
+    printDuplicates         =   false           ,   -- if they are counted, all duplicates are also printed  
+    devourCoords            =   false           ,   -- delete all coords from the pipeline
+    
+    func                    =   applyTracing    ,
+  }
 
 
   -- Add the default new functions to "ConfigConstructor":
@@ -978,6 +1071,11 @@ do
   function ConfigConstructor.newRotationMirrorConfig(fields)
     return DefaultRotationMirror:new(fields)
   end
+  
+  -- @TheRedDaemon
+  function ConfigConstructor.newTracingConfig(fields)
+    return DefaultTracing:new(fields)
+  end
 end
 
 
@@ -997,6 +1095,10 @@ SHAPE_2 = ConfigConstructor.newShapeConfig{ connectShapes = true }
 
 ROTATION = ConfigConstructor.newRotationMirrorConfig()
 
+TRACING = ConfigConstructor.newTracingConfig()
+
+TRACING_2 = ConfigConstructor.newTracingConfig{ tracingName = "Tracing 2" }
+
 
 --[[
   Coordinate modification order
@@ -1007,10 +1109,12 @@ ROTATION = ConfigConstructor.newRotationMirrorConfig()
   @TheRedDaemon
 ]]--
 ACTIVE_TRANSFORMATIONS = {
-   SHAPE        ,           -- 1. draw shape
-   SPRAY        ,           -- 2. mess it up
-   SHAPE_2      ,           -- 3. maybe create more complex shape
-   ROTATION     ,           -- 4. mirror using rotation
-   MIRROR       ,           -- 4. mirror
-   MIRROR_2     ,           -- 5. second mirror
+  TRACING       ,           -- 1. check some stuff
+  SHAPE         ,           -- 2. draw shape
+  SPRAY         ,           -- 3. mess it up
+  SHAPE_2       ,           -- 4. maybe create more complex shape
+  ROTATION      ,           -- 5. mirror using rotation
+  MIRROR        ,           -- 6. mirror
+  MIRROR_2      ,           -- 7. second mirror
+  TRACING_2     ,           -- 8. check stuff again
 }
