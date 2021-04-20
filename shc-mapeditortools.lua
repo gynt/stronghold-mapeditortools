@@ -62,7 +62,10 @@ The following features are implemented and currently applied in the order they a
     SPRAY.sprayExp -> higher values lead to more positions close to the actual brush position
         Integer             whole numbers, should be bigger than 1
     
-    SPRAY.spraySize -> max deviation from the actual brush position for both axes
+    SPRAY.sprayMax -> max deviation from the actual brush position for both axes
+        Integer             whole numbers
+        
+    SPRAY.sprayMin -> min deviation from the actual brush position for both axes
         Integer             whole numbers
     
     SPRAY.sprayInt -> intensity; if random number bigger, skips the draw call
@@ -211,8 +214,9 @@ end
   
   @TheRedDaemon
 ]]--
-function randomSprayDeviation(centeringExp, size)
-  local rand = round((math.random()^centeringExp) * size)
+function randomSprayDeviation(centeringExp, sizeMin, sizeMax)
+  local range = sizeMax - sizeMin
+  local rand = round((math.random()^centeringExp) * range) + sizeMin
   rand = math.random() < 0.5 and -rand or rand -- plus or minus
   return rand
 end
@@ -558,7 +562,10 @@ function applySpray(config, coordlist, size)
   
   local sprayInt = config.sprayInt
   local sprayExp = config.sprayExp
-  local spraySize = config.spraySize
+  
+  -- very simple structure, easy to break, but should be ok
+  local sprayMin = config.sprayMin
+  local sprayMax = config.sprayMax
   
   -- requires more complicated algorithm
   if config.keepOriginalCoord then
@@ -626,8 +633,8 @@ function applySpray(config, coordlist, size)
     
       local origCoord = keepOrigin and coord or nil
       local devCoord = keepDev and {
-            coord[1] + randomSprayDeviation(sprayExp, spraySize),
-            coord[2] + randomSprayDeviation(sprayExp, spraySize)
+            coord[1] + randomSprayDeviation(sprayExp, sprayMin, sprayMax),
+            coord[2] + randomSprayDeviation(sprayExp, sprayMin, sprayMax)
           } or nil
 
       coordAddFunc(origCoord, devCoord)
@@ -655,8 +662,8 @@ function applySpray(config, coordlist, size)
       for _, coord in ipairs(coordlist) do
         -- only add coord if random number smaller then sprayInt
         if math.random() < sprayInt then
-          coord[1] = coord[1] + randomSprayDeviation(sprayExp, spraySize)
-          coord[2] = coord[2] + randomSprayDeviation(sprayExp, spraySize)
+          coord[1] = coord[1] + randomSprayDeviation(sprayExp, sprayMin, sprayMax)
+          coord[2] = coord[2] + randomSprayDeviation(sprayExp, sprayMin, sprayMax)
           table.insert(newCoordlist, coord)
         end
       end
@@ -664,8 +671,8 @@ function applySpray(config, coordlist, size)
       coordlist = newCoordlist
     else
       for _, coord in ipairs(coordlist) do
-        coord[1] = coord[1] + randomSprayDeviation(sprayExp, spraySize)
-        coord[2] = coord[2] + randomSprayDeviation(sprayExp, spraySize)
+        coord[1] = coord[1] + randomSprayDeviation(sprayExp, sprayMin, sprayMax)
+        coord[2] = coord[2] + randomSprayDeviation(sprayExp, sprayMin, sprayMax)
       end
     end
   end
@@ -931,7 +938,8 @@ do
     removeRememberedCoords  =   true            ,   -- "true": coord added to "lastCoords" is removed from the pipeline
     connectShapes           =   false           ,   -- connectShapes: "true": coordlist index is only moved by 1 before the next shape is drawn
                                                     --                "false": uses coords only once, unused remainders are silently discarded
-                            
+                  
+    -- @TheRedDaemon: I am a bit annoyed that the config holds some status, but I also have no better solution...
     lastCoords              =   {}              ,   -- data: last selected points
                             
     func                    =   applyShape      ,
@@ -948,7 +956,8 @@ do
   
   local DefaultSpray = DefaultBase:new{
     sprayExp            =   3               ,   -- higher -> more centered, should be bigger than 1
-    spraySize           =   8               ,   -- max spray deviation for both axes
+    sprayMax            =   8               ,   -- max spray deviation for both axes
+    sprayMin            =   0               ,   -- min spray deviation for both axes
     sprayInt            =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
     keepOriginalCoord   =   false           ,   -- "true": also applies the original coord alongside the deviated
     sprayIntMode        =   "both"          ,   -- effect of Int on: "deviated", "original", "both", "together", "separator"
