@@ -938,8 +938,19 @@ do
     removeRememberedCoords  =   true            ,   -- "true": coord added to "lastCoords" is removed from the pipeline
     connectShapes           =   false           ,   -- connectShapes: "true": coordlist index is only moved by 1 before the next shape is drawn
                                                     --                "false": uses coords only once, unused remainders are silently discarded
-                  
-    -- @TheRedDaemon: I am a bit annoyed that the config holds some status, but I also have no better solution...
+             
+    --[[
+      @TheRedDaemon: I am a bit annoyed that this config holds some status.
+      
+      SUGGESTION:
+        Maybe use yet another modification "applyCollector" (or something like this), which collects an amount
+        of coords before giving all of it to the next stage, so one would have an extra system for that.
+        Options could be the number to collect and whether or not the collected coords should be devoured.
+        Issues:
+          - Too complicated for now -> Shape would need two options to work.
+          - Resetting the collections would require some sort of notification, like a "changed brush" or
+            "deselected" tool event.
+    ]]--
     lastCoords              =   {}              ,   -- data: last selected points
                             
     func                    =   applyShape      ,
