@@ -1,4 +1,14 @@
 
+--[[
+  @TheRedDaemon:
+  Some bigger restructuring might be necessary (one day). Among that:
+    - from table.insert to direct index
+    - even more visual space between function complexes
+    - restructure function complexes
+    - remove control functions where not needed anymore
+    - a table of contents at the start, so that one could better CTRL+F to the intended place
+]]--
+
 -- ///////////////
 -- // help text //
 -- ///////////////
@@ -99,6 +109,13 @@ Available commands:
         stack               get the current lua stack size
 ]]
 
+
+-- TODO: create -> needs to return the string
+function getStatus()
+  return [[
+  TODO: Maybe use hardcoded functions for every feature or run over the _FieldUtil_ fields.
+        Print in order of execution with numbers. First __name, then "field    value"]]
+end
 
 
 -- //////////////////////
@@ -844,17 +861,15 @@ do
   -- // configuration tables //
   
   
-  -- @TheRedDaemon: TODO: Should think about a structure Config.field.value, Config.field.check, Config.field.check ? -> alias problem
-  
-  
   --[[
     Create default configuration base table.
   
     @TheRedDaemon
   ]]--
   local DefaultBase = {
-    active      =   false                       ,   -- is the modification active
+    active      =   false   ,   -- is the modification active
     
+    _FieldUtil_ =   {}      ,   -- includes check functions and help texts by parameter name
     __name = "Base Configuration Object", -- debug info
   }
   
@@ -866,85 +881,54 @@ do
     @TheRedDaemon
   ]]--
   function DefaultBase.func(config, coordinatelist, size)
-    type()
     print("Noticed config without a valid function. No changes to coords.")
     return coordinatelist
   end
   
   
   --[[
-    General function to validate a call to the table.
-    Prints help texts and validates values.
+    General function to set a field in the configuration.
+    Also prints help texts.
     
-    First return will be true if the the values should be set.
-    The second is "nil" in most cases, however, a check function can return
-    a table with pairs to set.
-  
-    @TheRedDaemon
-  ]]--
-  function DefaultBase:validateTableCall(field, value)
-    if rawget(self, "check") == nil then -- move up to control structures
-      local parent = getmetatable(self) -- check parent for validation or help text
-      if parent == nil then
-        print("No valid field setting structure found.")
-        return false
-      end
-      return parent:validateTableCall(field, value)
-    end
-    
-    if field == nil then
-      local featureTextFunc = rawget(self, "help").feature
-      if featureTextFunc == nil then
-        print("No feature description found.")
-      else
-        print(featureTextFunc())
-      end
-      return false
-    end
-    
-    if self.check[field] == nil then
-      local parent = getmetatable(self) -- check parent for validation or help text
-      if parent == nil then
-        print("No parameter handler for this name found: ", field)
-        return false
-      end
-      return parent:validateTableCall(field, value)
-    end
-    
-    if value == nil then
-      local fieldTextFunc = rawget(self, "help")[field]
-      if fieldTextFunc == nil then
-        print("No parameter description found.")
-      else
-        print(fieldTextFunc())
-      end
-      return false
-    end
-    
-    return self.check[field](field, value)
-  end
-  
-  
-  --[[
-    Function that every config __call should call.
-    Will check if setting a value is valid and set it.
-    The check might also return a table of pairs. These will always be set.
+    Returns true if any field was set. Might not be the field requested through "field".
   
     @TheRedDaemon
   ]]--
   function DefaultBase:setField(field, value)
-    local setThisField, othersToSet = self:validateTableCall(field, value)
-    if setThisField then
-      self[field] = value
-      print("Parameter value set.")
+    if field == nil then
+      local featureCon = self._FieldUtil_[self.__name]
+      local featureText = featureCon ~= nil and featureCon.help or nil
+      if featureText == nil then
+        featureText = "No feature description found."
+      end
+      
+      print(featureText)
+      return false
     end
     
-    if othersToSet ~= nil then
-      for otherField, otherValue in pairs(othersToSet) do
-        self[otherField] = otherValue
-        print("Parameter '", otherField, "' set to: ", otherValue)
+    local fieldUtil = nil
+    local currentClass = self
+    repeat
+      fieldUtil = currentClass._FieldUtil_[field]
+      if fieldUtil == nil then
+        currentClass = getmetatable(currentClass) -- check parent for validation or help text
+        if currentClass == nil then
+          print("No parameter handler for this name found: ", field)
+          return false
+        end
       end
+    until (fieldUtil ~= nil)
+    
+    if value == nil then
+      local fieldText = fieldUtil.help
+      if fieldText == nil then
+        fieldText = "No parameter description found."
+      end
+      print(fieldText)
+      return false
     end
+    
+    return fieldUtil.set(self, field, value)
   end
   
   
@@ -1000,136 +984,294 @@ do
   }
   
 
-  -- // value check tables //
+  --[[
+    Create all _FieldUtil_ for the configurations.
+    
+    @TheRedDaemon
+  ]]--
+  
+  -- @TheRedDaemon: Do the (...).set functions need the field value?
+  -- @TheRedDaemon: It might be beneficial in the future to create some helper functions.
   
   
-  -- helper function
-  local function createAliasReturn(valueOk, field, parameterName, value)
-    local aliasTable = nil
-    if valueOk and field ~= parameterName then
-      valueOk = false
-      aliasTable = { [parameterName] = value }
-    end
-    return valueOk, aliasTable
-  end
+  -- // base
+  local baseFieldUtil = DefaultBase._FieldUtil_
   
-  
-  -- base
-  DefaultBase.check = {}
-  local baseCheck = DefaultBase.check
-  
-  function baseCheck.func(field, value)
-    print("The function of this configuration can not be changed with this method.")
-    return false
-  end
-  
-  function baseCheck.active(field, value)
-    return isBoolean(value)
-  end
-  
-  
-  -- spray
-  DefaultSpray.check = {}
-  local sprayCheck = DefaultSpray.check
-  
-  function sprayCheck.sprayExp(field, value)
-    local valueOk = isNumber(value) and isInRange(value, 1, nil, ">= 1")
-    return createAliasReturn(valueOk, field, "sprayExp", value)
-  end
-  sprayCheck.exp = sprayCheck.sprayExp -- alias
-  
-  function sprayCheck.spraySize(field, value)
-    local valueOk = isInteger(value) and isInRange(value, 0, nil, ">= 0")
-    return createAliasReturn(valueOk, field, "spraySize", value)
-  end
-  sprayCheck.size = sprayCheck.spraySize -- alias
-  
-  function sprayCheck.sprayInt(field, value)
-    local valueOk = isNumber(value) and isInRange(value, 0, 1, "0 <= value <= 1.0")
-    return createAliasReturn(valueOk, field, "sprayInt", value)
-  end
-  sprayCheck.int = sprayCheck.sprayInt -- alias
-  
-  
-  -- // help text functions //
-  
-  
-  -- @TheRedDaemon: functions needed for aliases
-  
-  
-  -- base
-  DefaultBase.help = {}
-  local baseHelp = DefaultBase.help
-  
-  function baseHelp.feature()
-    return [[
+  baseFieldUtil[DefaultBase.__name] = {}
+  baseFieldUtil[DefaultBase.__name].help = [[
     
       ## Base Configuration ##
       This is a raw configuration object.
       If you can read this and you did not intend to experiment with the functions,
       please report this as a bug on github.]]
+  
+  -- func
+  baseFieldUtil.func = {}
+  
+  function baseFieldUtil.func.set(config, field, value)
+    print("The function of this configuration can not be changed with this method.")
   end
   
-  function baseHelp.func()
-    return [[
+  baseFieldUtil.func.help = [[
     
       "func"
       The parameter "func" contains the function which will be called with this configuration.
       This is an internal value and should not be changed.]]
+      
+  -- active
+  baseFieldUtil.active = {}
+  
+  function baseFieldUtil.active.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.active = value
+      if value then
+        print("Feature activated.")
+      else
+        print("Feature deactivated.")
+      end
+    end
+    return res
   end
   
-  function baseHelp.active()
-    return [[
+  baseFieldUtil.active.help = [[
     
       "active"
       General activation parameter. Controls whether the feature is active or not.
-      "active" is a likely candidate of a parameter that is set by other parameter changes.
+      "active" is a likely candidate for a parameter that is set by other parameter changes.
       
           false                 feature is deactivated
           true                  feature is active
           
       Default: false]]
-  end
   
   
-  -- spray
-  DefaultSpray.help = {}
-  local sprayHelp = DefaultSpray.help
+  -- // spray
+  DefaultSpray._FieldUtil_ = {}
+  local sprayFieldUtil = DefaultSpray._FieldUtil_
   
-  function sprayHelp.feature()
-    return [[
+  sprayFieldUtil[DefaultSpray.__name] = {}
+  sprayFieldUtil[DefaultSpray.__name].help = [[
     
       ## Spray Modification ##
       TODO
-    ]]
+  ]]
+  
+  -- sprayExp
+  sprayFieldUtil.sprayExp = {}
+  
+  function sprayFieldUtil.sprayExp.set(config, field, value)
+    local res = isNumber(value) and isInRange(value, 1, nil, ">= 1")
+    if res then
+      config.sprayExp = value
+      print("Set spray exponent to: ", value)
+    end
+    return res
   end
   
-  function sprayHelp.spraySize()
-    return [[
-    
-      "spraySize", alias: "size"
-      TODO
-    ]]
-  end
-  sprayHelp.size = sprayHelp.spraySize -- alias
-  
-  function sprayHelp.sprayInt()
-    return [[
-    
-      "sprayInt", alias: "int"
-      TODO
-    ]]
-  end
-  sprayHelp.int = sprayHelp.sprayInt -- alias
-  
-  function sprayHelp.sprayExp()
-    return [[
+  sprayFieldUtil.sprayExp.help = [[
     
       "sprayExp", alias: "exp"
       TODO
-    ]]
+  ]]
+  
+  sprayFieldUtil.exp = sprayFieldUtil.sprayExp -- alias
+  
+  -- sprayInt
+  sprayFieldUtil.sprayInt = {}
+  
+  function sprayFieldUtil.sprayInt.set(config, field, value)
+    local res = isNumber(value) and isInRange(value, 0, 1, "0 <= value <= 1.0")
+    if res then
+      config.sprayInt = value
+      print("Set spray intensity to: ", value)
+    end
+    return res
   end
-  sprayHelp.exp = sprayHelp.sprayExp -- alias
+  
+  sprayFieldUtil.sprayInt.help = [[
+    
+      "sprayInt", alias: "int"
+      TODO
+  ]]
+  
+  sprayFieldUtil.int = sprayFieldUtil.sprayInt -- alias
+  
+  -- spraySize
+  sprayFieldUtil.spraySize = {}
+  
+  function sprayFieldUtil.spraySize.set(config, field, value)
+    local res = isInteger(value) and isInRange(value, 0, nil, ">= 0")
+    if res then
+      config.spraySize = value
+      print("Set spray size to: ", value)
+    end
+    return res
+  end
+  
+  sprayFieldUtil.spraySize.help = [[
+    
+      "spraySize", alias: "size"
+      TODO
+  ]]
+  
+  sprayFieldUtil.size = sprayFieldUtil.spraySize -- alias
+  
+  
+  -- // mirror
+  DefaultMirror._FieldUtil_ = {}
+  local mirrorFieldUtil = DefaultMirror._FieldUtil_
+  
+  mirrorFieldUtil[DefaultMirror.__name] = {}
+  mirrorFieldUtil[DefaultMirror.__name].help = [[
+    
+      ## Mirror Modification ##
+      TODO
+  ]]
+  
+  -- mirrorMode
+  mirrorFieldUtil.mirrorMode = {}
+  
+  function mirrorFieldUtil.mirrorMode.set(config, field, value)
+    local res = isString(value)
+    if res then
+      if value == "none" or value == "off" then
+        config.active = false
+        print("Mirror deactivated.")
+      elseif value == "horizontal" or value == "vertical" or
+          value == "diagonal_x" or value == "diagonal_y" or
+          value == "point" then
+        config.mirrorMode = value
+        config.active = true
+        print("Set mirror active and to mode: ", value)
+      else
+        res = false
+        print("No valid mirror mode: ", value)
+      end
+    end
+    return res
+  end
+  
+  mirrorFieldUtil.mirrorMode.help = [[
+    
+      "mirrorMode", alias: "mode"
+      TODO
+  ]]
+  
+  mirrorFieldUtil.mode = mirrorFieldUtil.mirrorMode -- alias
+  
+  -- coordOrder
+  mirrorFieldUtil.coordOrder = {}
+  
+  function mirrorFieldUtil.coordOrder.set(config, field, value)
+    local res = isString(value)
+    if res then
+      if value == "shape" or value == "coord" then
+        config.coordOrder = value
+        print("Set coordinate order to: ", value)
+      else
+        res = false
+        print("No valid coordinate order: ", value)
+      end
+    end
+    return res
+  end
+  
+  mirrorFieldUtil.coordOrder.help = [[
+    
+      "coordOrder", alias: "order"
+      TODO
+  ]]
+  
+  mirrorFieldUtil.order = mirrorFieldUtil.coordOrder -- alias
+  
+  
+  -- // shape
+  DefaultShape._FieldUtil_ = {}
+  local shapeFieldUtil = DefaultShape._FieldUtil_
+  
+  shapeFieldUtil[DefaultShape.__name] = {}
+  shapeFieldUtil[DefaultShape.__name].help = [[
+    
+      ## Shape Modification ##
+      TODO
+  ]]
+  
+  -- shape
+  shapeFieldUtil.shape = {}
+  
+  function shapeFieldUtil.shape.set(config, field, value)
+    local res = isString(value)
+    if res then
+      if value == "none" or value == "off" then
+        config.active = false
+        print("Shape brush deactivated.")
+      elseif value == "line" or value == "rect" or
+          value == "rect45" or value == "circle" then
+        config.shape = value
+        config.active = true
+        print("Set shape brush active and to shape: ", value)
+      else
+        res = false
+        print("No valid shape: ", value)
+      end
+    end
+    return res
+  end
+  
+  shapeFieldUtil.shape.help = [[
+    
+      "shape"
+      TODO
+  ]]
+  
+  -- removeRememberedCoords
+  shapeFieldUtil.removeRememberedCoords = {}
+  
+  function shapeFieldUtil.removeRememberedCoords.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.removeRememberedCoords = value
+      if value then
+        print("Remembered coordinates are now removed from the pipeline.")
+      else
+        print("Remembered coordinates will stay in the pipeline.")
+      end
+    end
+    return res
+  end
+  
+  shapeFieldUtil.removeRememberedCoords.help = [[
+    
+      "removeRememberedCoords", alias: "remove"
+      TODO
+  ]]
+   
+  shapeFieldUtil.remove = shapeFieldUtil.removeRememberedCoords -- alias
+  
+  -- connectShapes
+  shapeFieldUtil.connectShapes = {}
+  
+  function shapeFieldUtil.connectShapes.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.connectShapes = value
+      if value then
+        print("Coordinates will be reused between shapes.")
+      else
+        print("Coordinates are only used once.")
+      end
+    end
+    return res
+  end
+  
+  shapeFieldUtil.connectShapes.help = [[
+    
+      "connectShapes", alias: "connect"
+      TODO
+  ]]
+   
+  shapeFieldUtil.connect = shapeFieldUtil.connectShapes -- alias
 
 
   -- Add the default new functions to "ConfigConstructor":
