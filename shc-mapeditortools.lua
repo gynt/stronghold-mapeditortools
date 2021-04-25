@@ -776,6 +776,75 @@ end
 ]]--
 ConfigConstructor = {} -- default constructors
 do
+
+  
+  -- // assert functions //
+  
+  
+  -- @TheRedDaemon
+  local function checkType(value, intendedType, failMessage)
+    local res = type(value) == intendedType
+    if not res and failMessage ~= nil then
+      print(failMessage)
+    end
+    return res
+  end
+
+  
+  -- @TheRedDaemon
+  local function isBoolean(value)
+    return checkType(value, "boolean", "The given parameter value was not true or false (Boolean).")
+  end
+  
+  
+  -- @TheRedDaemon
+  local function isNumber(value)
+    return checkType(value, "number", "The given parameter value was no number.")
+  end
+  
+  
+  -- @TheRedDaemon
+  local function isInteger(value)
+    local res = isNumber(value)
+    if res and math.floor(value) ~= value then
+      print("The given parameter value was no whole number (Integer).")
+      res = false
+    end
+    return res
+  end
+  
+  
+  -- @TheRedDaemon
+  local function isString(value)
+    return checkType(value, "string", "The given parameter value was no string.")
+  end
+  
+  
+  --[[
+    Checks if a number is in a specific range (inclusive).
+    Setting "minRange" or "maxRange" to "nil" will assume no border.
+  
+    @TheRedDaemon
+  ]]--
+  local function isInRange(number, minRange, maxRange, rangeMessage)
+    if minRange ~= nil and number < minRange then
+      print("The given number is too small. Allowed range: ", rangeMessage)
+      return false
+    end
+    
+    if maxRange ~= nil and number > maxRange then
+      print("The given number is too big. Allowed range: ", rangeMessage)
+      return false
+    end
+    
+    return true
+  end
+  
+  
+  -- // configuration tables //
+  
+  
+  -- @TheRedDaemon: TODO: Should think about a structure Config.field.value, Config.field.check, Config.field.check ? -> alias problem
   
   
   --[[
@@ -784,7 +853,9 @@ do
     @TheRedDaemon
   ]]--
   local DefaultBase = {
-    active      =   false                 ,   -- is the modification active
+    active      =   false                       ,   -- is the modification active
+    
+    __name = "Base Configuration Object", -- debug info
   }
   
   
@@ -795,11 +866,88 @@ do
     @TheRedDaemon
   ]]--
   function DefaultBase.func(config, coordinatelist, size)
+    type()
     print("Noticed config without a valid function. No changes to coords.")
     return coordinatelist
   end
-
-
+  
+  
+  --[[
+    General function to validate a call to the table.
+    Prints help texts and validates values.
+    
+    First return will be true if the the values should be set.
+    The second is "nil" in most cases, however, a check function can return
+    a table with pairs to set.
+  
+    @TheRedDaemon
+  ]]--
+  function DefaultBase:validateTableCall(field, value)
+    if rawget(self, "check") == nil then -- move up to control structures
+      local parent = getmetatable(self) -- check parent for validation or help text
+      if parent == nil then
+        print("No valid field setting structure found.")
+        return false
+      end
+      return parent:validateTableCall(field, value)
+    end
+    
+    if field == nil then
+      local featureTextFunc = rawget(self, "help").feature
+      if featureTextFunc == nil then
+        print("No feature description found.")
+      else
+        print(featureTextFunc())
+      end
+      return false
+    end
+    
+    if self.check[field] == nil then
+      local parent = getmetatable(self) -- check parent for validation or help text
+      if parent == nil then
+        print("No parameter handler for this name found: ", field)
+        return false
+      end
+      return parent:validateTableCall(field, value)
+    end
+    
+    if value == nil then
+      local fieldTextFunc = rawget(self, "help")[field]
+      if fieldTextFunc == nil then
+        print("No parameter description found.")
+      else
+        print(fieldTextFunc())
+      end
+      return false
+    end
+    
+    return self.check[field](field, value)
+  end
+  
+  
+  --[[
+    Function that every config __call should call.
+    Will check if setting a value is valid and set it.
+    The check might also return a table of pairs. These will always be set.
+  
+    @TheRedDaemon
+  ]]--
+  function DefaultBase:setField(field, value)
+    local setThisField, othersToSet = self:validateTableCall(field, value)
+    if setThisField then
+      self[field] = value
+      print("Parameter value set.")
+    end
+    
+    if othersToSet ~= nil then
+      for otherField, otherValue in pairs(othersToSet) do
+        self[otherField] = otherValue
+        print("Parameter '", otherField, "' set to: ", otherValue)
+      end
+    end
+  end
+  
+  
   --[[
     Constructs new object (or class, there does not seem to be a difference) from the default base values.
     "fields" is a table that can already provide values that extend the object or override functions.
@@ -810,6 +958,7 @@ do
     fields = fields or {}
     setmetatable(fields, self)
     self.__index = self
+    self.__call = DefaultBase.setField -- sets __call always to default handler
     return fields
   end
 
@@ -826,14 +975,17 @@ do
     lastCoords              =   {}              ,   -- data: last selected points
                             
     func                    =   applyShape      ,
+    
+    __name = "Shape Feature Configuration", -- debug info
   }
-  
   
   local DefaultMirror = DefaultBase:new{
     mirrorMode  =   "horizontal"    ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point"
     coordOrder  =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
     
     func        =   applyMirrors    ,
+    
+    __name = "Mirror Feature Configuration", -- debug info
   }
   
   
@@ -843,7 +995,141 @@ do
     sprayInt    =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
     
     func        =   applySpray      ,
+    
+    __name = "Spray Feature Configuration", -- debug info
   }
+  
+
+  -- // value check tables //
+  
+  
+  -- helper function
+  local function createAliasReturn(valueOk, field, parameterName, value)
+    local aliasTable = nil
+    if valueOk and field ~= parameterName then
+      valueOk = false
+      aliasTable = { [parameterName] = value }
+    end
+    return valueOk, aliasTable
+  end
+  
+  
+  -- base
+  DefaultBase.check = {}
+  local baseCheck = DefaultBase.check
+  
+  function baseCheck.func(field, value)
+    print("The function of this configuration can not be changed with this method.")
+    return false
+  end
+  
+  function baseCheck.active(field, value)
+    return isBoolean(value)
+  end
+  
+  
+  -- spray
+  DefaultSpray.check = {}
+  local sprayCheck = DefaultSpray.check
+  
+  function sprayCheck.sprayExp(field, value)
+    local valueOk = isNumber(value) and isInRange(value, 1, nil, ">= 1")
+    return createAliasReturn(valueOk, field, "sprayExp", value)
+  end
+  sprayCheck.exp = sprayCheck.sprayExp -- alias
+  
+  function sprayCheck.spraySize(field, value)
+    local valueOk = isInteger(value) and isInRange(value, 0, nil, ">= 0")
+    return createAliasReturn(valueOk, field, "spraySize", value)
+  end
+  sprayCheck.size = sprayCheck.spraySize -- alias
+  
+  function sprayCheck.sprayInt(field, value)
+    local valueOk = isNumber(value) and isInRange(value, 0, 1, "0 <= value <= 1.0")
+    return createAliasReturn(valueOk, field, "sprayInt", value)
+  end
+  sprayCheck.int = sprayCheck.sprayInt -- alias
+  
+  
+  -- // help text functions //
+  
+  
+  -- @TheRedDaemon: functions needed for aliases
+  
+  
+  -- base
+  DefaultBase.help = {}
+  local baseHelp = DefaultBase.help
+  
+  function baseHelp.feature()
+    return [[
+    
+      ## Base Configuration ##
+      This is a raw configuration object.
+      If you can read this and you did not intend to experiment with the functions,
+      please report this as a bug on github.]]
+  end
+  
+  function baseHelp.func()
+    return [[
+    
+      "func"
+      The parameter "func" contains the function which will be called with this configuration.
+      This is an internal value and should not be changed.]]
+  end
+  
+  function baseHelp.active()
+    return [[
+    
+      "active"
+      General activation parameter. Controls whether the feature is active or not.
+      "active" is a likely candidate of a parameter that is set by other parameter changes.
+      
+          false                 feature is deactivated
+          true                  feature is active
+          
+      Default: false]]
+  end
+  
+  
+  -- spray
+  DefaultSpray.help = {}
+  local sprayHelp = DefaultSpray.help
+  
+  function sprayHelp.feature()
+    return [[
+    
+      ## Spray Modification ##
+      TODO
+    ]]
+  end
+  
+  function sprayHelp.spraySize()
+    return [[
+    
+      "spraySize", alias: "size"
+      TODO
+    ]]
+  end
+  sprayHelp.size = sprayHelp.spraySize -- alias
+  
+  function sprayHelp.sprayInt()
+    return [[
+    
+      "sprayInt", alias: "int"
+      TODO
+    ]]
+  end
+  sprayHelp.int = sprayHelp.sprayInt -- alias
+  
+  function sprayHelp.sprayExp()
+    return [[
+    
+      "sprayExp", alias: "exp"
+      TODO
+    ]]
+  end
+  sprayHelp.exp = sprayHelp.sprayExp -- alias
 
 
   -- Add the default new functions to "ConfigConstructor":
@@ -877,16 +1163,16 @@ end
 -- @TheRedDaemon: Create modification configurations:
 
 
-MIRROR = ConfigConstructor.newMirrorConfig()
+mirror = ConfigConstructor.newMirrorConfig()
 
 -- @TheRedDaemon: Second mirror. Sends table with from default deviating value.
-MIRROR_2 = ConfigConstructor.newMirrorConfig{ mirrorMode = "vertical" }
+mirror2 = ConfigConstructor.newMirrorConfig{ mirrorMode = "vertical" }
 
-SPRAY = ConfigConstructor.newSprayConfig()
+spray = ConfigConstructor.newSprayConfig()
 
-SHAPE = ConfigConstructor.newShapeConfig()
+shape = ConfigConstructor.newShapeConfig()
 
-SHAPE_2 = ConfigConstructor.newShapeConfig{ connectShapes = true }
+shape2 = ConfigConstructor.newShapeConfig{ connectShapes = true }
 
 
 --[[
@@ -898,9 +1184,9 @@ SHAPE_2 = ConfigConstructor.newShapeConfig{ connectShapes = true }
   @TheRedDaemon
 ]]--
 ACTIVE_TRANSFORMATIONS = {
-   SHAPE        ,           -- 1. draw shape
-   SPRAY        ,           -- 2. mess it up
-   SHAPE_2      ,           -- 3. maybe create more complex shape
-   MIRROR       ,           -- 4. mirror
-   MIRROR_2     ,           -- 5. second mirror
+   shape        ,           -- 1. draw shape
+   spray        ,           -- 2. mess it up
+   shape2       ,           -- 3. maybe create more complex shape
+   mirror       ,           -- 4. mirror
+   mirror2      ,           -- 5. second mirror
 }
