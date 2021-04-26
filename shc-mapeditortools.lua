@@ -9,9 +9,9 @@
     - a table of contents at the start, so that one could better CTRL+F to the intended place
 ]]--
 
--- ///////////////
--- // help text //
--- ///////////////
+-- //////////////////////////
+-- // help text and status //
+-- //////////////////////////
 
 
 --[[
@@ -110,11 +110,46 @@ Available commands:
 ]]
 
 
--- TODO: create -> needs to return the string
+--[[
+  Creates status text.
+  
+  The text will contain the value "active". However, non-active features are filtered.
+  
+  Note: The "func" value is received, but is not placed into the string.
+
+  @TheRedDaemon
+]]--
 function getStatus()
-  return [[
-  TODO: Maybe use hardcoded functions for every feature or run over the _FieldUtil_ fields.
-        Print in order of execution with numbers. First __name, then "field    value"]]
+  local statusTable = {}
+  statusTable[1] = "\nSTATUS (in execution order):\n" -- first new line
+  
+  local count = 2
+  local featureCounter = 1
+  for _, feature in ipairs(ACTIVE_TRANSFORMATIONS) do
+    local featureStatus = feature:getPublicStatus()
+
+    -- only active
+    if featureStatus.active ~= nil and featureStatus.active == true then
+      statusTable[count] = "\n" .. tostring(featureCounter) .. ". " .. tostring(featureStatus.__name) .. "\n"
+      count = count + 1
+      featureCounter = featureCounter + 1
+      
+      for field, value in pairs(featureStatus) do
+        if not (field == "__name" or field == "func") then
+          local toPad = 30 - string.len(field)
+          local featStr = tostring(field) .. string.rep(" ", toPad) .. ":    " .. tostring(value)
+          statusTable[count] = "\t" .. featStr .. "\n"
+          count = count + 1
+        end
+      end
+    end
+  end
+  
+  if count < 3 then
+    statusTable[count] = "No feature active at the moment.\n"
+  end
+
+  return table.concat(statusTable)
 end
 
 
@@ -929,6 +964,48 @@ do
     end
     
     return fieldUtil.set(self, field, value)
+  end
+  
+  
+  --[[
+    Creates a status using the structure in _FieldUtil_.
+    Aliases will be filtered by using rawget(), so that they do not fall through on accident.
+    
+    Will return a table of key value pairs. Keys are the parameter.
+    The configuration description will be in "__name"..
+  
+    @TheRedDaemon
+  ]]--
+  function DefaultBase:getPublicStatus()
+    local statusTable = {}
+    
+    statusTable.__name = self._FieldUtil_[self.__name] ~= nil and self.__name or "Unknown"
+    
+    local currentClass = self
+    repeat
+      local currentFieldUtil = nil
+      repeat
+        currentFieldUtil = rawget(currentClass, "_FieldUtil_")
+        if currentFieldUtil == nil then
+          currentClass = getmetatable(currentClass) -- check parent
+        end
+        if currentClass == nil then
+          return statusTable -- we are done
+        end
+      until (currentFieldUtil ~= nil)
+
+      for field, _ in pairs(currentFieldUtil) do
+      
+        -- will notice default fields, filters aliases, does not override (keeps specialized)
+        if rawget(currentClass, field) ~= nil and statusTable[field] == nil then
+          statusTable[field] = self[field] -- add current value
+        end
+      end
+      
+      currentClass = getmetatable(currentClass)
+    until (currentClass == nil)
+    
+    return statusTable
   end
   
   
