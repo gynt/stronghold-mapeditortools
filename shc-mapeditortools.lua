@@ -904,6 +904,23 @@ do
   
   
   --[[
+    General function to guard a simple field assignment.
+    If this configuration does not have an index named "field", the assignment is prevented.
+    
+    WARNING: Does not prevent wrong assignments to valid fields.
+  
+    @gynt, @TheRedDaemon
+  ]]--
+  function DefaultBase:guardedAssign(field, value)
+    if self[field] == nil then
+      print("'" .. tostring(field) .. "' is not a valid parameter for this feature.")
+    else
+      rawset(self, field, value)
+    end
+  end
+  
+  
+  --[[
     Creates a status using the structure in _FieldUtil_.
     Aliases will be filtered by using rawget(), so that they do not fall through on accident.
     
@@ -956,6 +973,7 @@ do
     setmetatable(fields, self)
     self.__index = self
     self.__call = DefaultBase.setField -- sets __call always to default handler
+    self.__newindex = DefaultBase.guardedAssign -- sets __newindex always to default handler
     return fields
   end
 
