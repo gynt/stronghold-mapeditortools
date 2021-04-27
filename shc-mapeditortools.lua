@@ -1,7 +1,17 @@
 
--- ///////////////
--- // help text //
--- ///////////////
+--[[
+  @TheRedDaemon:
+  Some bigger restructuring might be necessary (one day). Among that:
+    - from table.insert to direct index
+    - even more visual space between function complexes
+    - restructure function complexes
+    - remove control functions where not needed anymore
+    - a table of contents at the start, so that one could better CTRL+F to the intended place
+]]--
+
+-- //////////////////////////
+-- // help text and status //
+-- //////////////////////////
 
 
 --[[
@@ -12,93 +22,71 @@
   @TheRedDaemon
 ]]--
 HELP = [[
-This console is used to configure the additional map editor features.
 
-    FEATURE.parameter = value           assign a new value to a feature parameter
-    return FEATURE.parameter            return the current parameter value
+This console is used to configure additional map editor features.
+(feature, parameter and value are dummy names)
 
-As an example:
+    feature()                           displays feature help text
+    feature("parameter")                displays parameter help text
+    feature("parameter", value)         assign a new value to a feature parameter
 
-    MIRROR.mirrorMode = 'horizontal'    sets the mirror to 'horizontal'.
-    return MIRROR.mirrorMode            returns the current MIRROR_MODE
-    
-Parameters are explained like this:
+To get the current configurations you can use:
 
-    FEATURE.parameter -> additional explanation
-        possibleValues      additional value explanation
-        ...
-    
-WARNING: Currently max 200 actions are supported. Big shapes, especially when mirrored, reach
-         this limit very fast. So do not be surprised if only one half of a shape appears.
+    status                              get all parameters of the active features
+    return feature.parameter            get the value of one parameter
 
 The following features are implemented and currently applied in the order they are mentioned:
 
-    ## Shape Brush ##
-    Uses the coordinates of two clicks (the first one does nothing) to create a shape.
-    WARNING: The first coordinate is only invalidated after use or after disabling the shape brush.
-             
-    SHAPE.active -> deactivate/activate
-        boolean             false or true
-             
-    SHAPE.shape -> the shape to apply
-        "line"              a simple line between two points
-        "rect"              rectangle seen from the front; clicks define edges
-        "rect45"            rectangle along the diagonals; clicks define edges
-        "circle"            a circle; first click sets middle, second border
-        
-    SHAPE.removeRememberedCoords -> if "true", than the first click is not drawn
-        boolean             false or true
-        
-    SHAPE.connectShapes -> decides how shapes are drawn if multiple coordinates reach this phase
-        true                coordinates are reused; for example, lines are connected
-        false               coordinates are only used once
-    
-    ## Spray Brush ##
-    "Sprays" the current coordinates by displacing them by a random amount.
-    
-    SPRAY.active -> deactivate/activate
-        boolean             false or true
-        
-    SPRAY.sprayExp -> higher values lead to more positions close to the actual brush position
-        Integer             whole numbers, should be bigger than 1
-    
-    SPRAY.spraySize -> max deviation from the actual brush position for both axes
-        Integer             whole numbers
-    
-    SPRAY.sprayInt -> intensity; if random number bigger, skips the draw call
-        Float               value between 0 to 1, inclusive   
+    shape, spray, shape2, mirror, mirror2
 
-    ## Shape Brush 2 ##
-    Functions like "Shape Brush", but instead of "SHAPE", the feature name is "SHAPE_2".
+Use for example "mirror()" to get an explanation and a parameter list.
 
-    ## Mirroring ##
-    Actions are mirrored around one axis.
-    
-    MIRROR.active -> deactivate/activate
-        boolean             false or true
-                            
-    MIRROR.mirrorMode
-        "horizontal"
-        "vertical"
-        "diagonal_x"
-        "diagonal_y"
-        "point"             mirror around the center of the map
-        
-    MIRROR.coordOrder -> order of coordinates after mirroring
-        "shape"             draws original shape first, then the mirror
-        "coord"             every single coordinate of the original shape is mirrored one after another
-        
-    ## Mirroring 2 ##
-    Functions like "Mirroring", but instead of "MIRROR", the feature name is "MIRROR_2".
-    Allows to apply a second mirror.
-    Using the same mirror mode twice however will only apply the original coordinates a second time.
-
-Available commands:
-        help                display this help text again
-        reload              reload the shc-mapmakerstools.lua file without restarting Stronghold.
-        stack               get the current lua stack size
+WARNING: Currently max 200 actions are supported. Big shapes, especially when mirrored, reach
+         this limit very fast. So do not be surprised if only one half of a shape appears.
 ]]
 
+
+--[[
+  Creates status text.
+  
+  The text will contain the value "active". However, non-active features are filtered.
+  
+  Note: The "func" value is received, but is not placed into the string.
+
+  @TheRedDaemon
+]]--
+function getStatus()
+  local statusTable = {}
+  statusTable[1] = "\nSTATUS (in execution order):\n" -- first new line
+  
+  local count = 2
+  local featureCounter = 1
+  for _, feature in ipairs(ACTIVE_TRANSFORMATIONS) do
+    local featureStatus = feature:getPublicStatus()
+
+    -- only active
+    if featureStatus.active ~= nil and featureStatus.active == true then
+      statusTable[count] = "\n" .. tostring(featureCounter) .. ". " .. tostring(featureStatus.__name) .. "\n"
+      count = count + 1
+      featureCounter = featureCounter + 1
+      
+      for field, value in pairs(featureStatus) do
+        if not (field == "__name" or field == "func") then
+          local toPad = 30 - string.len(field)
+          local featStr = tostring(field) .. string.rep(" ", toPad) .. ":    " .. tostring(value)
+          statusTable[count] = "\t" .. featStr .. "\n"
+          count = count + 1
+        end
+      end
+    end
+  end
+  
+  if count < 3 then
+    statusTable[count] = "No feature active at the moment.\n"
+  end
+
+  return table.concat(statusTable)
+end
 
 
 -- //////////////////////
@@ -406,7 +394,7 @@ end
 
 
 -- @gynt
-function applyMirror(x, y, size, mirrorMode)
+function applyMirrorFunction(x, y, size, mirrorMode)
   local newx = x
   local newy = y
   
@@ -591,7 +579,7 @@ end
   
   @gynt (original), @TheRedDaemon
 ]]--
-function applyMirrors(config, coordlist, size)
+function applyMirror(config, coordlist, size)
   local mirrorMode = config.mirrorMode
   if not config.active or isTableEmpty(coordlist) or not isValidMirrorMode(mirrorMode) then
     return coordlist
@@ -603,14 +591,14 @@ function applyMirrors(config, coordlist, size)
     
     for _, coord in ipairs(coordlist) do
       table.insert(newCoordTable, coord)
-      table.insert(newCoordTable, applyMirror(coord[1], coord[2], size, mirrorMode))
+      table.insert(newCoordTable, applyMirrorFunction(coord[1], coord[2], size, mirrorMode))
     end
     coordlist = newCoordTable
     
   elseif coordOrder == "shape" then
     -- @TheRedDaemon: # should only have number indexes, so this should be fine.
     for index = 1, #coordlist do
-      table.insert(coordlist, applyMirror(coordlist[index][1], coordlist[index][2], size, mirrorMode))
+      table.insert(coordlist, applyMirrorFunction(coordlist[index][1], coordlist[index][2], size, mirrorMode))
     end
   else
     print("No valid coordinate order: " ..coordOrder)
@@ -765,61 +753,662 @@ end
 -- /////////////////////
 
 
--- @TheRedDaemon: Would it make sense to find more common variables than "func" and "active"?
+--[[
+  Create default modification configurations using simple LUA OOP.
+  Source: https://www.lua.org/pil/16.2.html
 
-MIRROR = {
-  mirrorMode    =   "horizontal"    ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point"
-  coordOrder    =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
+  Wrapped it in different scope to also test scoping and function assign.
+  This can be changed.
 
-  active        =   false           ,   -- is mirror active; equal to former mirrorMode = "off"
-  func          =   applyMirrors    ,
-}
+  @TheRedDaemon
+]]--
+ConfigConstructor = {} -- default constructors
+do
+
+  
+  -- // assert functions //
+  
+  
+  -- @TheRedDaemon
+  local function checkType(value, intendedType, failMessage)
+    local res = type(value) == intendedType
+    if not res and failMessage ~= nil then
+      print(failMessage)
+    end
+    return res
+  end
+
+  
+  -- @TheRedDaemon
+  local function isBoolean(value)
+    return checkType(value, "boolean", "The given parameter value was not true or false (Boolean).")
+  end
+  
+  
+  -- @TheRedDaemon
+  local function isNumber(value)
+    return checkType(value, "number", "The given parameter value was no number.")
+  end
+  
+  
+  -- @TheRedDaemon
+  local function isInteger(value)
+    local res = isNumber(value)
+    if res and math.floor(value) ~= value then
+      print("The given parameter value was no whole number (Integer).")
+      res = false
+    end
+    return res
+  end
+  
+  
+  -- @TheRedDaemon
+  local function isString(value)
+    return checkType(value, "string", "The given parameter value was no string.")
+  end
+  
+  
+  --[[
+    Checks if a number is in a specific range (inclusive).
+    Setting "minRange" or "maxRange" to "nil" will assume no border.
+  
+    @TheRedDaemon
+  ]]--
+  local function isInRange(number, minRange, maxRange, rangeMessage)
+    if minRange ~= nil and number < minRange then
+      print("The given number is too small. Allowed range: ", rangeMessage)
+      return false
+    end
+    
+    if maxRange ~= nil and number > maxRange then
+      print("The given number is too big. Allowed range: ", rangeMessage)
+      return false
+    end
+    
+    return true
+  end
+  
+  
+  -- // configuration tables //
+  
+  
+  --[[
+    Create default configuration base table.
+  
+    @TheRedDaemon
+  ]]--
+  local DefaultBase = {
+    active      =   false   ,   -- is the modification active
+    
+    _FieldUtil_ =   {}      ,   -- includes check functions and help texts by parameter name
+    __name = "Base Configuration Object", -- debug info
+  }
+  
+  
+  --[[
+    Add dummy "func" to "DefaultBase".
+    Executed if func in config not set. Returns "coordinatelist" unchanged.
+  
+    @TheRedDaemon
+  ]]--
+  function DefaultBase.func(config, coordinatelist, size)
+    print("Noticed config without a valid function. No changes to coords.")
+    return coordinatelist
+  end
+  
+  
+  --[[
+    General function to set a field in the configuration.
+    Also prints help texts.
+    
+    Returns true if any field was set. Might not be the field requested through "field".
+  
+    @TheRedDaemon
+  ]]--
+  function DefaultBase:setField(field, value)
+    if field == nil then
+      local featureCon = self._FieldUtil_[self.__name]
+      local featureText = featureCon ~= nil and featureCon.help or nil
+      if featureText == nil then
+        featureText = "No feature description found."
+      end
+      
+      print(featureText)
+      return false
+    end
+    
+    local fieldUtil = nil
+    local currentClass = self
+    repeat
+      fieldUtil = currentClass._FieldUtil_[field]
+      if fieldUtil == nil then
+        currentClass = getmetatable(currentClass) -- check parent for validation or help text
+        if currentClass == nil then
+          print("No parameter handler for this name found: ", field)
+          return false
+        end
+      end
+    until (fieldUtil ~= nil)
+    
+    if value == nil then
+      local fieldText = fieldUtil.help
+      if fieldText == nil then
+        fieldText = "No parameter description found."
+      end
+      print(fieldText)
+      return false
+    end
+    
+    return fieldUtil.set(self, field, value)
+  end
+  
+  
+  --[[
+    General function to guard a simple field assignment.
+    If this configuration does not have an index named "field", the assignment is prevented.
+    
+    WARNING: Does not prevent wrong assignments to valid fields.
+  
+    @gynt, @TheRedDaemon
+  ]]--
+  function DefaultBase:guardedAssign(field, value)
+    if self[field] == nil then
+      print("'" .. tostring(field) .. "' is not a valid parameter for this feature.")
+    else
+      rawset(self, field, value)
+    end
+  end
+  
+  
+  --[[
+    Creates a status using the structure in _FieldUtil_.
+    Aliases will be filtered by using rawget(), so that they do not fall through on accident.
+    
+    Will return a table of key value pairs. Keys are the parameter.
+    The configuration description will be in "__name"..
+  
+    @TheRedDaemon
+  ]]--
+  function DefaultBase:getPublicStatus()
+    local statusTable = {}
+    
+    statusTable.__name = self._FieldUtil_[self.__name] ~= nil and self.__name or "Unknown"
+    
+    local currentClass = self
+    repeat
+      local currentFieldUtil = nil
+      repeat
+        currentFieldUtil = rawget(currentClass, "_FieldUtil_")
+        if currentFieldUtil == nil then
+          currentClass = getmetatable(currentClass) -- check parent
+        end
+        if currentClass == nil then
+          return statusTable -- we are done
+        end
+      until (currentFieldUtil ~= nil)
+
+      for field, _ in pairs(currentFieldUtil) do
+      
+        -- will notice default fields, filters aliases, does not override (keeps specialized)
+        if rawget(currentClass, field) ~= nil and statusTable[field] == nil then
+          statusTable[field] = self[field] -- add current value
+        end
+      end
+      
+      currentClass = getmetatable(currentClass)
+    until (currentClass == nil)
+    
+    return statusTable
+  end
+  
+  
+  --[[
+    Constructs new object (or class, there does not seem to be a difference) from the default base values.
+    "fields" is a table that can already provide values that extend the object or override functions.
+  
+    @TheRedDaemon
+  ]]--
+  function DefaultBase:new(fields)
+    fields = fields or {}
+    setmetatable(fields, self)
+    self.__index = self
+    self.__call = DefaultBase.setField -- sets __call always to default handler
+    self.__newindex = DefaultBase.guardedAssign -- sets __newindex always to default handler
+    return fields
+  end
 
 
--- second mirror
-MIRROR_2 = {
-  mirrorMode    =   "vertical"      ,
-  coordOrder    =   "coord"         ,
-
-  active        =   false           ,
-  func          =   applyMirrors    ,
-}
+  -- @TheRedDaemon: Create default configuration tables:
 
 
-SPRAY = {
-  sprayExp      =   3               ,   -- defines how centered the random positions should be (higher -> more centered, should be bigger than 1)
-  spraySize     =   8               ,   -- max spray deviation for both axes
-  sprayInt      =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
+  local DefaultShape = DefaultBase:new{
+    shape                   =   "line"          ,   -- shapes: "line", "rect", "rect45", "circle"
+    removeRememberedCoords  =   true            ,   -- "true": coord added to "lastCoords" is removed from the pipeline
+    connectShapes           =   false           ,   -- connectShapes: "true": coordlist index is only moved by 1 before the next shape is drawn
+                                                    --                "false": uses coords only once, unused remainders are silently discarded
+                            
+    lastCoords              =   {}              ,   -- data: last selected points
+                            
+    func                    =   applyShape      ,
+    
+    __name = "Shape Feature Configuration", -- debug info
+  }
+  
+  local DefaultMirror = DefaultBase:new{
+    mirrorMode  =   "point"         ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point"
+    coordOrder  =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
+    
+    func        =   applyMirror     ,
+    
+    __name = "Mirror Feature Configuration", -- debug info
+  }
+  
+  
+  local DefaultSpray = DefaultBase:new{
+    sprayExp    =   3               ,   -- defines how centered the random positions should be (higher -> more centered, should be bigger than 1)
+    spraySize   =   8               ,   -- max spray deviation for both axes
+    sprayInt    =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
+    
+    func        =   applySpray      ,
+    
+    __name = "Spray Feature Configuration", -- debug info
+  }
+  
 
-  active        =   false           ,   -- is spray coord modification active
-  func          =   applySpray      ,   
-}
+  --[[
+    Create all _FieldUtil_ for the configurations.
+    
+    @TheRedDaemon
+  ]]--
+  
+  -- @TheRedDaemon: Do the (...).set functions need the field value?
+  -- @TheRedDaemon: It might be beneficial to create some helper functions in the future.
+  
+  
+  -- // base
+  local baseFieldUtil = DefaultBase._FieldUtil_
+  
+  baseFieldUtil[DefaultBase.__name] = {}
+  baseFieldUtil[DefaultBase.__name].help = [[
+    
+      ## Base Configuration ##
+      This is a raw configuration object.
+      If you can read this and you did not intend to experiment with the functions,
+      please report this as a bug on github.]]
+  
+  -- func
+  baseFieldUtil.func = {}
+  
+  function baseFieldUtil.func.set(config, field, value)
+    print("The function of this configuration can not be changed with this method.")
+  end
+  
+  baseFieldUtil.func.help = [[
+    
+      "func"
+      The parameter "func" contains the function which will be called with this configuration.
+      This is an internal value and should not be changed.]]
+      
+  -- active
+  baseFieldUtil.active = {}
+  
+  function baseFieldUtil.active.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.active = value
+      if value then
+        print("Feature activated.")
+      else
+        print("Feature deactivated.")
+      end
+    end
+    return res
+  end
+  
+  baseFieldUtil.active.help = [[
+    
+      "active"
+      General activation parameter. Controls whether the feature is active or not.
+      This parameter might be set by other parameter changes.
+      
+          false                 feature is deactivated
+          true                  feature is active
+          
+      Default: ]] .. tostring(DefaultBase.active)
+  
+  
+  -- // spray
+  DefaultSpray._FieldUtil_ = {}
+  local sprayFieldUtil = DefaultSpray._FieldUtil_
+  
+  sprayFieldUtil[DefaultSpray.__name] = {}
+  sprayFieldUtil[DefaultSpray.__name].help = [[
+    
+      ## Spray Modification ##
+      "Sprays" the received coordinates by displacing them by a random amount.
+    
+      Parameter                     Possible values
+          active                        false, true
+          sprayExp / exp                >= 1.0
+          spraySize / size              >= 0
+          sprayInt / int                0.0 <= value <= 1.0]]
+  
+  -- sprayExp
+  sprayFieldUtil.sprayExp = {}
+  
+  function sprayFieldUtil.sprayExp.set(config, field, value)
+    local res = isNumber(value) and isInRange(value, 1, nil, ">= 1.0")
+    if res then
+      config.sprayExp = value
+      print("Set spray exponent to: ", value)
+    end
+    return res
+  end
+  
+  sprayFieldUtil.sprayExp.help = [[
+    
+      "sprayExp", alias: "exp"
+      This value is the exponent that is applied to a random number between 0.0 and 1.0.
+      Higher values lead to smaller deviations and more positions close
+      to the actual brush coordinate.
+          
+          >= 1.0                numbers equal to / bigger than 1.0
+
+      Default: ]] .. tostring(DefaultSpray.sprayExp)
+  
+  sprayFieldUtil.exp = sprayFieldUtil.sprayExp -- alias
+  
+  -- sprayInt
+  sprayFieldUtil.sprayInt = {}
+  
+  function sprayFieldUtil.sprayInt.set(config, field, value)
+    local res = isNumber(value) and isInRange(value, 0, 1, "0.0 <= value <= 1.0")
+    if res then
+      config.sprayInt = value
+      print("Set spray intensity to: ", value)
+    end
+    return res
+  end
+  
+  sprayFieldUtil.sprayInt.help = [[
+    
+      "sprayInt", alias: "int"
+      Basically the intensity of the spray.
+      If a random number between 0.0 and 1.0 is bigger than this value, a coordinate is removed.
+      This check is made for every coordinate.
+                
+          0.0 <= value <= 1.0   numbers between 0.0 and 1.0 (inclusive)
+
+      Default: ]] .. tostring(DefaultSpray.sprayInt)
+  
+  sprayFieldUtil.int = sprayFieldUtil.sprayInt -- alias
+  
+  -- spraySize
+  sprayFieldUtil.spraySize = {}
+  
+  function sprayFieldUtil.spraySize.set(config, field, value)
+    local res = isInteger(value) and isInRange(value, 0, nil, ">= 0")
+    if res then
+      config.spraySize = value
+      print("Set spray size to: ", value)
+    end
+    return res
+  end
+  
+  sprayFieldUtil.spraySize.help = [[
+    
+      "spraySize", alias: "size"
+      This value sets the maximal deviation from the actual brush position for both axes.
+
+          >= 0                  whole numbers equal to / bigger than 0
+
+      Default: ]] .. tostring(DefaultSpray.spraySize)
+  
+  sprayFieldUtil.size = sprayFieldUtil.spraySize -- alias
+  
+  
+  -- // mirror
+  DefaultMirror._FieldUtil_ = {}
+  local mirrorFieldUtil = DefaultMirror._FieldUtil_
+  
+  mirrorFieldUtil[DefaultMirror.__name] = {}
+  mirrorFieldUtil[DefaultMirror.__name].help = [[
+    
+      ## Mirror Modification ##
+      Actions are mirrored around one axis.
+      
+      Parameter                     Possible values
+          active                        false, true
+          mirrorMode / mode             "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
+                                            "none", "off"
+          coordOrder / order            "shape", "coord"]]
+  
+  -- mirrorMode
+  mirrorFieldUtil.mirrorMode = {}
+  
+  function mirrorFieldUtil.mirrorMode.set(config, field, value)
+    local res = isString(value)
+    if res then
+      if value == "none" or value == "off" then
+        config.active = false
+        print("Mirror deactivated.")
+      elseif value == "horizontal" or value == "vertical" or
+          value == "diagonal_x" or value == "diagonal_y" or
+          value == "point" then
+        config.mirrorMode = value
+        config.active = true
+        print("Set mirror active and to mode: ", value)
+      else
+        res = false
+        print("No valid mirror mode: ", value)
+      end
+    end
+    return res
+  end
+  
+  mirrorFieldUtil.mirrorMode.help = [[
+    
+      "mirrorMode", alias: "mode"
+      The type of mirror to apply.
+      Setting values other than "none" or "off" will also activate this feature.
+
+          "horizontal"          mirror around the horizontal
+          "vertical"            mirror around the vertical
+          "diagonal_x"          mirror around the direction of the x-coordinates
+          "diagonal_y"          mirror around the direction of the y-coordinates
+          "point"               mirror around the center of the map
+          "none" / "off"        disables this mirror feature
+
+      Default: ]] .. tostring(DefaultMirror.mirrorMode)
+  
+  mirrorFieldUtil.mode = mirrorFieldUtil.mirrorMode -- alias
+  
+  -- coordOrder
+  mirrorFieldUtil.coordOrder = {}
+  
+  function mirrorFieldUtil.coordOrder.set(config, field, value)
+    local res = isString(value)
+    if res then
+      if value == "shape" or value == "coord" then
+        config.coordOrder = value
+        print("Set coordinate order to: ", value)
+      else
+        res = false
+        print("No valid coordinate order: ", value)
+      end
+    end
+    return res
+  end
+  
+  mirrorFieldUtil.coordOrder.help = [[
+    
+      "coordOrder", alias: "order"
+      Defines the order of coordinates after they are mirrored.
+
+          "shape"               received coordinates are mirrored as a whole and then attached to the list
+          "coord"               every single coordinate will be followed by its mirrored version
+
+      Default: ]] .. tostring(DefaultMirror.coordOrder)
+  
+  mirrorFieldUtil.order = mirrorFieldUtil.coordOrder -- alias
+  
+  
+  -- // shape
+  DefaultShape._FieldUtil_ = {}
+  local shapeFieldUtil = DefaultShape._FieldUtil_
+  
+  shapeFieldUtil[DefaultShape.__name] = {}
+  shapeFieldUtil[DefaultShape.__name].help = [[
+    
+      ## Shape Modification ##
+      This feature uses the received coordinates to generate a shape of coordinates.
+      If it receives only one, it is remembered until it receives a second one to build a shape with.
+      Should it receive more than one, it will try to generate as many shapes as it has coordinates for.
+      WARNING: The remembered coordinate is only invalidated after use or after disabling this feature.
+      
+      Parameter                     Possible values
+          active                        false, true
+          shape                         "line", "rect", "rect45", "circle", "none", "off"
+          removeRememberedCoords /      false, true
+            remove
+          connectShapes / connect       false, true]]
+  
+  -- shape
+  shapeFieldUtil.shape = {}
+  
+  function shapeFieldUtil.shape.set(config, field, value)
+    local res = isString(value)
+    if res then
+      if value == "none" or value == "off" then
+        config.active = false
+        print("Shape brush deactivated.")
+      elseif value == "line" or value == "rect" or
+          value == "rect45" or value == "circle" then
+        config.shape = value
+        config.active = true
+        print("Set shape brush active and to shape: ", value)
+      else
+        res = false
+        print("No valid shape: ", value)
+      end
+    end
+    return res
+  end
+  
+  shapeFieldUtil.shape.help = [[
+    
+      "shape"
+      The type of shape to apply.
+      Setting values other than "none" or "off" will also activate this feature.
+        
+          "line"                a simple line between two points
+          "rect"                rectangle seen from the front; coordinates define edges
+          "rect45"              rectangle along the diagonals; coordinates define edges
+          "circle"              a circle; first coordinate sets middle, second the radius
+          "none" / "off"        disables this shape feature
+
+      Default: ]] .. tostring(DefaultShape.shape)
+  
+  -- removeRememberedCoords
+  shapeFieldUtil.removeRememberedCoords = {}
+  
+  function shapeFieldUtil.removeRememberedCoords.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.removeRememberedCoords = value
+      if value then
+        print("Remembered coordinates are now removed from the pipeline.")
+      else
+        print("Remembered coordinates will stay in the pipeline.")
+      end
+    end
+    return res
+  end
+  
+  shapeFieldUtil.removeRememberedCoords.help = [[
+    
+      "removeRememberedCoords", alias: "remove"
+      The shape feature stores a coordinate should it receive only one without having stored any.
+      This value indicates whether this first coordinate is discarded or passed further.
+ 
+          false                 keeps the coordinate in the pipeline
+          true                  remembered coordinate is discarded
+
+      Default: ]] .. tostring(DefaultShape.removeRememberedCoords)
+   
+  shapeFieldUtil.remove = shapeFieldUtil.removeRememberedCoords -- alias
+  
+  -- connectShapes
+  shapeFieldUtil.connectShapes = {}
+  
+  function shapeFieldUtil.connectShapes.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.connectShapes = value
+      if value then
+        print("Coordinates will be reused between shapes.")
+      else
+        print("Coordinates are only used once.")
+      end
+    end
+    return res
+  end
+  
+  shapeFieldUtil.connectShapes.help = [[
+    
+      "connectShapes", alias: "connect"
+      The shape modification may receive multiple coordinates and then tries to create multiple shapes.
+      This value decides how the coordinates are used.
+      
+          false                 coordinates are only used once
+          true                  coordinates are reused; for example, lines are connected
+
+      Default: ]] .. tostring(DefaultShape.connectShapes)
+   
+  shapeFieldUtil.connect = shapeFieldUtil.connectShapes -- alias
 
 
-SHAPE = {
-  shape                     =   "line"      ,   -- shapes: "line", "rect", "rect45", "circle"
-  removeRememberedCoords    =   true        ,   -- "true": coord added to "lastCoords" is removed from the pipeline
-  connectShapes             =   false       ,   -- connectShapes: "true": coordlist index is only moved by 1 before the next shape is drawn
-                                                --                "false": uses coords only once, unused remainders are silently discarded
+  -- Add the default new functions to "ConfigConstructor":
+  
+  
+  -- @TheRedDaemon 
+  function ConfigConstructor.newBaseConfig(fields)
+    return DefaultBase:new(fields)
+  end
+  
+  
+  -- @TheRedDaemon
+  function ConfigConstructor.newSprayConfig(fields)
+    return DefaultSpray:new(fields)
+  end
+  
+  
+  -- @TheRedDaemon
+  function ConfigConstructor.newShapeConfig(fields)
+    return DefaultShape:new(fields)
+  end
+  
+  
+  -- @TheRedDaemon
+  function ConfigConstructor.newMirrorConfig(fields)
+    return DefaultMirror:new(fields)
+  end
+end
 
-  lastCoords                =   {}          ,   -- data: last selected points
 
-  active                    =   false       ,   -- is shape coord modification active
-  func                      =   applyShape  ,
-}
+-- @TheRedDaemon: Create modification configurations:
 
 
-SHAPE_2 = {
-  shape                     =   "line"      ,   -- shapes: "line", "rect", "rect45", "circle"
-  removeRememberedCoords    =   true        ,   -- "true": coord added to "lastCoords" is removed from the pipeline
-  connectShapes             =   true        ,   -- connectShapes: "true": coordlist index is only moved by 1 before the next shape is drawn
-                                                --                "false": uses coords only once, unused remainders are silently discarded
+mirror = ConfigConstructor.newMirrorConfig{ active = true }
 
-  lastCoords                =   {}          ,   -- data: last selected points
+-- @TheRedDaemon: Second mirror. Sends table with from default deviating value.
+mirror2 = ConfigConstructor.newMirrorConfig()
 
-  active                    =   false       ,   -- is shape coord modification active
-  func                      =   applyShape  ,
-}
+spray = ConfigConstructor.newSprayConfig()
+
+shape = ConfigConstructor.newShapeConfig()
+
+shape2 = ConfigConstructor.newShapeConfig()
 
 
 --[[
@@ -831,9 +1420,9 @@ SHAPE_2 = {
   @TheRedDaemon
 ]]--
 ACTIVE_TRANSFORMATIONS = {
-   SHAPE        ,           -- 1. draw shape
-   SPRAY        ,           -- 2. mess it up
-   SHAPE_2      ,           -- 3. maybe create more complex shape
-   MIRROR       ,           -- 4. mirror
-   MIRROR_2     ,           -- 5. second mirror
+   shape        ,           -- 1. draw shape
+   spray        ,           -- 2. mess it up
+   shape2       ,           -- 3. maybe create more complex shape
+   mirror       ,           -- 4. mirror
+   mirror2      ,           -- 5. second mirror
 }
