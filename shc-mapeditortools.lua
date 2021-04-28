@@ -67,11 +67,16 @@ function getStatus()
   for _, feature in ipairs(ACTIVE_TRANSFORMATIONS) do
     local featureStatus = feature:getPublicStatus()
 
-
     -- only active
     if featureStatus.active ~= nil and featureStatus.active == true then
-      statusTable[count] = "\n" .. tostring(featureCounter) .. ". " .. tostring(featureStatus.__name) .. "\n"
-      count = count + 1
+      if count == 2 then
+        statusTable[count] = "\n\t\t\tCLICK\n"
+        count = count + 1
+      end
+      
+      statusTable[count] = "\n\t\t\t ||\n\t\t\t \\/\n\n"
+      statusTable[count + 1] = tostring(featureCounter) .. ". " .. tostring(featureStatus.__name) .. "\n"
+      count = count + 2
       featureCounter = featureCounter + 1
       
       for field, value in pairs(featureStatus) do
@@ -87,6 +92,8 @@ function getStatus()
   
   if count < 3 then
     statusTable[count] = "No feature active at the moment.\n"
+  else
+    statusTable[count] = "\n\t\t\t ||\n\t\t\t \\/\n\n\t\t\tGAME\n"
   end
 
   return table.concat(statusTable)
