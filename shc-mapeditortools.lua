@@ -43,6 +43,13 @@ Use for example "mirror()" to get an explanation and a parameter list.
 
 WARNING: Currently max 200 actions are supported. Big shapes, especially when mirrored, reach
          this limit very fast. So do not be surprised if only one half of a shape appears.
+         
+WARNING: The "QuickEdit"-mode of the windows console will freeze the game if a function wants
+         to print something while the console is in "Selection"-mode.
+         Either press "escape" or use right click or some key to leave this mode,
+         or disable the "QuickEdit"-mode with:
+            
+            Right click on title bar -> Properties -> Options -> QuickEdit
 ]]
 
 
@@ -52,6 +59,7 @@ WARNING: Currently max 200 actions are supported. Big shapes, especially when mi
   The text will contain the value "active". However, non-active features are filtered.
   
   Note: The "func" value is received, but is not placed into the string.
+  
   @TheRedDaemon
 ]]--
 function getStatus()
@@ -394,7 +402,8 @@ end
 ]]--
 function isValidMirrorMode(mirrorMode)
   if mirrorMode == "point" or mirrorMode == "horizontal" or mirrorMode == "vertical" or
-      mirrorMode == "diagonal_x" or mirrorMode == "diagonal_y" then
+      mirrorMode == "diagonal_x" or mirrorMode == "diagonal_y" or
+      mirrorMode == "quadrant_before" or mirrorMode == "quadrant_after" then
     return true
   else
     print("Don't know this mirror mode: " .. mirrorMode)
@@ -403,7 +412,7 @@ function isValidMirrorMode(mirrorMode)
 end
 
 
--- @gynt
+-- @gynt, @Krarilotus, @TheRedDaemon
 function applyMirrorFunction(x, y, size, mirrorMode)
   local newx = x
   local newy = y
@@ -423,6 +432,12 @@ function applyMirrorFunction(x, y, size, mirrorMode)
   elseif mirrorMode == "diagonal_y" then
     newx = 399 - x - (size - 1)
     newy = y
+  elseif mirrorMode == "quadrant_before" then
+    newx = 400 - y - size
+    newy = x
+  elseif mirrorMode == "quadrant_after" then
+    newx = y
+    newy = 400 - x - size
   end
   -- @TheRedDaemon: Fails silently to not clutter the console.
   
@@ -1129,7 +1144,8 @@ do
   }
   
   local DefaultMirror = DefaultBase:new{
-    mirrorMode  =   "point"         ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point"
+    mirrorMode  =   "point"         ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
+                                        --                 "quadrant_before", "quadrant_after"
     coordOrder  =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
     
     func        =   applyMirror     ,
@@ -1341,7 +1357,7 @@ do
       Parameter                     Possible values
           active                        false, true
           mirrorMode / mode             "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
-                                            "none", "off"
+                                            "quadrant_before", "quadrant_after", "none", "off"
           coordOrder / order            "shape", "coord"]]
   
   -- mirrorMode
@@ -1355,7 +1371,8 @@ do
         print("Mirror deactivated.")
       elseif value == "horizontal" or value == "vertical" or
           value == "diagonal_x" or value == "diagonal_y" or
-          value == "point" then
+          value == "point" or value == "quadrant_before" or
+          value == "quadrant_after" then
         config.mirrorMode = value
         config.active = true
         print("Set mirror active and to mode: ", value)
@@ -1378,6 +1395,8 @@ do
           "diagonal_x"          mirror around the direction of the x-coordinates
           "diagonal_y"          mirror around the direction of the y-coordinates
           "point"               mirror around the center of the map
+          "quadrant_before"         mirrors actions in the clockwise next quadrant
+          "quadrant_after"          mirrors actions in the counterclockwise next quadrant
           "none" / "off"        disables this mirror feature
 
       Default: ]] .. tostring(DefaultMirror.mirrorMode)
@@ -1429,7 +1448,7 @@ do
       WARNING:
           - The remembered coordinate is only invalidated after use or after disabling this feature.
           - Some transformations, like creating hills, may display wrong tiles until the view
-            is rotated at least once when being applied using the shape feature.
+            is rotated at least once when being applied. This seems to be a vanilla game bug.
             If not changed this way, the tiles will be visually bugged in the normal game.
       
       Parameter                     Possible values
