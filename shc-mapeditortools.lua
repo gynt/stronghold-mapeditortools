@@ -37,7 +37,7 @@ To get the current configurations you can use:
 
 The following features are implemented and currently applied in the order they are mentioned:
 
-    shape, spray, shape2, mirror, mirror2
+    tracing, shape, spray, shape2, rotation, mirror, mirror2, tracing2
 
 Use for example "mirror()" to get an explanation and a parameter list.
 
@@ -45,57 +45,7 @@ WARNING: Currently max 200 actions are supported. Big shapes, especially when mi
          this limit very fast. So do not be surprised if only one half of a shape appears.
 ]]
 
---[[
-    ## Tracing ##
-    Useful to check some values.
-    
-    TRACING.active -> deactivate/activate
-        boolean             false or true
-    
-    TRACING.printTracingName -> should the tracing name be printed
-        boolean             false or true
-    
-    TRACING.tracingName -> name printed on execution
-        String              some word, like "Tree"
-    
-    TRACING.printFirstCoord -> print the first received coordinate; in case of TRACING click coord
-        boolean             false or true
-    
-    TRACING.printAllCoords -> prints all coordinates
-        boolean             false or true
-  
-    TRACING.printNumberOfCoords -> count the number of coordinates and print it
-        boolean             false or true
-    
-    TRACING.printNumberOfDuplicates -> count the number of duplicates and print it
-        boolean             false or true
-    
-    TRACING.printDuplicates -> print all duplicates; requires TRACING.printNumberOfDuplicates = true  
-        boolean             false or true
-    
-    TRACING.devourCoords -> delete all coordinates from the pipeline after the check
-        boolean             false or true
 
-    ## Rotation Mirroring ##
-    Mirrors the actions around a defined center.
-    The number of requested actions is evenly placed on a circle.
-    
-    ROTATION.active -> deactivate/activate
-        boolean             false or true
-    
-    ROTATION.numberOfPoints -> number of actions to place around the center
-        Integer             1 or bigger; 2 equals old 'Mirroring'.mirrorMode = "point"
-    
-    ROTATION.rotationCenterX -> x-coordinate of the rotation center
-        Integer             map is 400x400; the center is 200
-    
-    ROTATION.rotationCenterY -> y-coordinate of the rotation center
-        Integer             map is 400x400; the center is 200
-    
-    ROTATION.coordOrder -> order of coordinates after mirroring
-        "shape"             draws original shape first, then the mirrored points
-        "coord"             every single coordinate of the original shape is mirrored one after another
-]]--
 --[[
   Creates status text.
   
@@ -196,6 +146,10 @@ function countCoordDuplicates(coordTable, display)
     display = false -- default
   end
   
+  if display == true then
+    print("    Duplicates:")
+  end
+  
   local numberOfDuplicates = 0
   for indexOne, coordOne in ipairs(coordTable) do
     for indexTwo, coordTwo in ipairs(coordTable) do
@@ -204,11 +158,19 @@ function countCoordDuplicates(coordTable, display)
         numberOfDuplicates = numberOfDuplicates + 1
       
         if display then
-          print("        Duplicate found: " ..coordOne[1] ..":" ..coordOne[2])
+          print("        Duplicate " .. numberOfDuplicates .. ": " .. coordOne[1] .. ":" .. coordOne[2])
         end
       end
     end
   end
+  
+  if display == true then
+    if numberOfDuplicates == 0 then
+      print("        No duplicates.")
+    end
+    print("")
+  end
+  
   return numberOfDuplicates
 end
 
@@ -728,7 +690,7 @@ end
 --[[
   Provides some tracing functions.
   
-  Check the HELP text or the default configuration for more information.
+  Check the help texts or the default configuration for more information.
 
   @TheRedDaemon
 ]]--
@@ -738,10 +700,12 @@ function applyTracing(config, coordlist, size)
   end
   
   if config.printTracingName then
+    print("")
     print(config.tracingName ..":")
   end
   
   if config.printFirstCoord then
+    print("")
     if isTableEmpty(coordlist) then
       print("    No coordinates. Can not print first.")
     else
@@ -750,6 +714,8 @@ function applyTracing(config, coordlist, size)
   end
   
   if config.printAllCoords then
+    print("")
+    print("    All coordinates:")
     if isTableEmpty(coordlist) then
       print("        No coordinates.")
     else
@@ -760,10 +726,12 @@ function applyTracing(config, coordlist, size)
   end
   
   if config.printNumberOfCoords then
-    print("    Total number of coordinates: " ..getTableLength(coordlist))
+    print("")
+    print("    Total number of coordinates: " .. #coordlist)
   end
   
   if config.printNumberOfDuplicates then
+    print("")
     print("    Number of coordinate duplicates: " ..countCoordDuplicates(coordlist, config.printDuplicates))
   end
   
@@ -947,13 +915,13 @@ do
   
   -- @TheRedDaemon
   local function isBoolean(value)
-    return checkType(value, "boolean", "The given parameter value was not true or false (Boolean).")
+    return checkType(value, "boolean", "The given parameter value is not true or false (Boolean).")
   end
   
   
   -- @TheRedDaemon
   local function isNumber(value)
-    return checkType(value, "number", "The given parameter value was no number.")
+    return checkType(value, "number", "The given parameter value is no number.")
   end
   
   
@@ -961,7 +929,7 @@ do
   local function isInteger(value)
     local res = isNumber(value)
     if res and math.floor(value) ~= value then
-      print("The given parameter value was no whole number (Integer).")
+      print("The given parameter value is no whole number (Integer).")
       res = false
     end
     return res
@@ -970,7 +938,7 @@ do
   
   -- @TheRedDaemon
   local function isString(value)
-    return checkType(value, "string", "The given parameter value was no string.")
+    return checkType(value, "string", "The given parameter value is no string.")
   end
   
   
@@ -1188,20 +1156,24 @@ do
     coordOrder      =   "coord"             ,   -- order of coordinates after mirroring: "shape", "coord"
     
     func            =   applyRotationMirror ,
+    
+    __name = "Rotation Mirror Feature Configuration", -- debug info
   }
   
   
   local DefaultTracing = DefaultBase:new{
-    printTracingName        =   false           ,   -- should the tracing name be printed
+    printTracingName        =   true            ,   -- should the tracing name be printed
     tracingName             =   "Tracing"       ,   -- name printed on execution
-    printFirstCoord         =   false           ,   -- print the first coord in the coordlist, equal to click if utility first
-    printAllCoords          =   false           ,   -- prints all coords
-    printNumberOfCoords     =   false           ,   -- count the number of coords and print it
-    printNumberOfDuplicates =   false           ,   -- count the number of duplicates and print it
-    printDuplicates         =   false           ,   -- if they are counted, all duplicates are also printed  
+    printFirstCoord         =   true            ,   -- print the first coord in the coordlist, equal to click if utility first
+    printAllCoords          =   true            ,   -- prints all coords
+    printNumberOfCoords     =   true            ,   -- count the number of coords and print it
+    printNumberOfDuplicates =   true            ,   -- count the number of duplicates and print it
+    printDuplicates         =   true            ,   -- if they are counted, all duplicates are also printed  
     devourCoords            =   false           ,   -- delete all coords from the pipeline
     
     func                    =   applyTracing    ,
+    
+    __name = "Tracing Feature Configuration", -- debug info
   }
 
   --[[
@@ -1453,7 +1425,12 @@ do
       This feature uses the received coordinates to generate a shape of coordinates.
       If it receives only one, it is remembered until it receives a second one to build a shape with.
       Should it receive more than one, it will try to generate as many shapes as it has coordinates for.
-      WARNING: The remembered coordinate is only invalidated after use or after disabling this feature.
+      
+      WARNING:
+          - The remembered coordinate is only invalidated after use or after disabling this feature.
+          - Some transformations, like creating hills, may display wrong tiles until the view
+            is rotated at least once when being applied using the shape feature.
+            If not changed this way, the tiles will be visually bugged in the normal game.
       
       Parameter                     Possible values
           active                        false, true
@@ -1555,6 +1532,365 @@ do
       Default: ]] .. tostring(DefaultShape.connectShapes)
    
   shapeFieldUtil.connect = shapeFieldUtil.connectShapes -- alias
+  
+  
+  -- // rotation mirror
+  DefaultRotationMirror._FieldUtil_ = {}
+  local rotationFieldUtil = DefaultRotationMirror._FieldUtil_
+  
+  rotationFieldUtil[DefaultRotationMirror.__name] = {}
+  rotationFieldUtil[DefaultRotationMirror.__name].help = [[
+    
+      ## Rotation Mirroring ##
+      Mirrors the actions around a defined center.
+      The requested actions are evenly placed on a circle.
+      
+      Parameter                     Possible values
+          active                        false, true
+          numberOfPoints / points       >= 1
+          rotationCenterX / x           whole numbers
+          rotationCenterY / y           whole numbers
+          coordOrder / order            "shape", "coord"]]
+  
+  -- numberOfPoints
+  rotationFieldUtil.numberOfPoints = {}
+  
+  function rotationFieldUtil.numberOfPoints.set(config, field, value)
+    local res = isInteger(value) and isInRange(value, 1, nil, ">= 1")
+    if res then
+      config.numberOfPoints = value
+      
+      if value == 1 then
+        config.active = false
+        print("Disabled rotation mirror.")
+      else
+        config.active = true
+        print("Enabled rotation mirror and set number of points to: ", value)
+      end
+    end
+    return res
+  end
+  
+  rotationFieldUtil.numberOfPoints.help = [[
+    
+      "numberOfPoints", alias: "points"
+      This value defines the number of actions to place around the center.
+      Setting it to "1" deactivates the feature, higher values enable it.
+
+          >= 1                      whole numbers equal to / bigger than 1
+
+      Default: ]] .. tostring(DefaultRotationMirror.numberOfPoints)
+  
+  rotationFieldUtil.points = rotationFieldUtil.numberOfPoints -- alias
+  
+  -- rotationCenterX
+  rotationFieldUtil.rotationCenterX = {}
+  
+  function rotationFieldUtil.rotationCenterX.set(config, field, value)
+    local res = isInteger(value)
+    if res then
+      config.rotationCenterX = value
+      print("Set x-coordinate of rotation center to: ", value)
+    end
+    return res
+  end
+  
+  rotationFieldUtil.rotationCenterX.help = [[
+    
+      "rotationCenterX", alias: "x"
+      The x-coordinate of the rotation center.
+      The map has a size of 400x400, with the center being at 200.
+
+          25, 200, 345, ...         whole numbers
+
+      Default: ]] .. tostring(DefaultRotationMirror.rotationCenterX)
+  
+  rotationFieldUtil.x = rotationFieldUtil.rotationCenterX -- alias
+  
+  -- rotationCenterY
+  rotationFieldUtil.rotationCenterY = {}
+  
+  function rotationFieldUtil.rotationCenterY.set(config, field, value)
+    local res = isInteger(value)
+    if res then
+      config.rotationCenterY = value
+      print("Set y-coordinate of rotation center to: ", value)
+    end
+    return res
+  end
+  
+  rotationFieldUtil.rotationCenterY.help = [[
+    
+      "rotationCenterY", alias: "y"
+      The y-coordinate of the rotation center.
+      The map has a size of 400x400, with the center being at 200.
+
+          25, 200, 345, ...         whole numbers
+
+      Default: ]] .. tostring(DefaultRotationMirror.rotationCenterY)
+  
+  rotationFieldUtil.y = rotationFieldUtil.rotationCenterY -- alias
+  
+  -- coordOrder
+  rotationFieldUtil.coordOrder = {}
+  
+  function rotationFieldUtil.coordOrder.set(config, field, value)
+    local res = isString(value)
+    if res then
+      if value == "shape" or value == "coord" then
+        config.coordOrder = value
+        print("Set coordinate order to: ", value)
+      else
+        res = false
+        print("No valid coordinate order: ", value)
+      end
+    end
+    return res
+  end
+  
+  rotationFieldUtil.coordOrder.help = [[
+    
+      "coordOrder", alias: "order"
+      Defines the order of coordinates after they are mirrored.
+      However, the mirrored coordinates are created clockwise, regardless of this setting.
+
+          "shape"                   received coordinates are mirrored as a whole and then attached to the list
+          "coord"                   every single coordinate will be followed by its mirrored versions
+
+      Default: ]] .. tostring(DefaultRotationMirror.coordOrder)
+  
+  rotationFieldUtil.order = rotationFieldUtil.coordOrder -- alias
+
+
+  -- // tracing
+  DefaultTracing._FieldUtil_ = {}
+  local tracingFieldUtil = DefaultTracing._FieldUtil_
+  
+  tracingFieldUtil[DefaultTracing.__name] = {}
+  tracingFieldUtil[DefaultTracing.__name].help = [[
+    
+      ## Tracing ##
+      Allows to display some values in the console.
+      
+      Parameter                     Possible values
+          active                        false, true
+          printTracingName              false, true
+          tracingName                   string    
+          printFirstCoord               false, true
+          printAllCoords                false, true
+          printNumberOfCoords           false, true
+          printNumberOfDuplicates       false, true
+          printDuplicates               false, true
+          devourCoords                  false, true]]
+          
+  -- printTracingName
+  tracingFieldUtil.printTracingName = {}
+  
+  function tracingFieldUtil.printTracingName.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printTracingName = value
+      if value then
+        print("Tracing name is printed.")
+      else
+        print("Tracing name is not printed.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printTracingName.help = [[
+    
+      "printTracingName"
+      A tracing configuration can have a name.
+      This value decides whether it is printed on usage.
+      
+          false                     does not print the tracing name
+          true                      prints the tracing name
+          
+      Default: ]] .. tostring(DefaultTracing.printTracingName)
+      
+  -- tracingName
+  tracingFieldUtil.tracingName = {}
+  
+  function tracingFieldUtil.tracingName.set(config, field, value)
+    local res = isString(value)
+    if res then
+      config.tracingName = value
+      print("Set tracing name to: ", value)
+    end
+    return res
+  end
+  
+  tracingFieldUtil.tracingName.help = [[
+    
+      "tracingName"
+      The name of this tracing configuration.
+      
+          string                    a string; example: "Tracing"
+          
+      Default: ]] .. tostring(DefaultTracing.tracingName)
+  
+  -- printFirstCoord
+  tracingFieldUtil.printFirstCoord = {}
+  
+  function tracingFieldUtil.printFirstCoord.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printFirstCoord = value
+      if value then
+        print("Prints the first received coordinate.")
+      else
+        print("Does not print the first received coordinate.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printFirstCoord.help = [[
+    
+      "printFirstCoord"
+      This value decides whether the first coordinate this feature receives during execution should be printed.
+      
+          false                     does not print the first received coordinate
+          true                      prints the first received coordinate
+          
+      Default: ]] .. tostring(DefaultTracing.printFirstCoord)
+      
+  -- printAllCoords
+  tracingFieldUtil.printAllCoords = {}
+  
+  function tracingFieldUtil.printAllCoords.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printAllCoords = value
+      if value then
+        print("Prints all received coordinates.")
+      else
+        print("Does not print the received coordinates.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printAllCoords.help = [[
+    
+      "printAllCoords"
+      This value decides whether all coordinates this feature receives during execution should be printed.
+      
+          false                     does not print all received coordinates
+          true                      prints all received coordinates
+          
+      Default: ]] .. tostring(DefaultTracing.printAllCoords)
+      
+  -- printNumberOfCoords
+  tracingFieldUtil.printNumberOfCoords = {}
+  
+  function tracingFieldUtil.printNumberOfCoords.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printNumberOfCoords = value
+      if value then
+        print("Prints number of all coordinates.")
+      else
+        print("Does not print number of all coordinates.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printNumberOfCoords.help = [[
+    
+      "printNumberOfCoords"
+      This value decides whether the number of all received coordinates should be printed.
+      
+          false                     does not print number
+          true                      print number of all received coordinates
+          
+      Default: ]] .. tostring(DefaultTracing.printNumberOfCoords)
+      
+  -- printNumberOfDuplicates
+  tracingFieldUtil.printNumberOfDuplicates = {}
+  
+  function tracingFieldUtil.printNumberOfDuplicates.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printNumberOfDuplicates = value
+      if value then
+        print("Prints number of noticed coordinate duplicates.")
+      else
+        print("Does not print number of noticed coordinate duplicates.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printNumberOfDuplicates.help = [[
+    
+      "printNumberOfDuplicates"
+      This value decides whether the number of all noticed coordinate duplicates should be printed.
+      
+          false                     does not print number
+          true                      print number of all noticed coordinate duplicates
+          
+      Default: ]] .. tostring(DefaultTracing.printNumberOfDuplicates)
+      
+  -- printDuplicates
+  tracingFieldUtil.printDuplicates = {}
+  
+  function tracingFieldUtil.printDuplicates.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printDuplicates = value
+      if value then
+        config.printNumberOfDuplicates = true
+        print("Print all coordinate duplicate information.")
+      else
+        print("Does not print all noticed coordinate duplicates.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printDuplicates.help = [[
+    
+      "printDuplicates"
+      This value decides whether all noticed coordinate duplicates should be printed.
+      Since the printing takes place during the counting, setting this to "true" will also
+      activate "printNumberOfDuplicates".
+      Setting it to "false" however will not deactivate "printNumberOfDuplicates".
+      
+      
+          false                     do not print all noticed coordinate duplicates
+          true                      print all noticed coordinate duplicates
+          
+      Default: ]] .. tostring(DefaultTracing.printDuplicates)
+      
+  -- devourCoords
+  tracingFieldUtil.devourCoords = {}
+  
+  function tracingFieldUtil.devourCoords.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.devourCoords = value
+      if value then
+        print("Received coordinates are removed.")
+      else
+        print("Received coordinates are passed on.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.devourCoords.help = [[
+    
+      "devourCoords"
+      This value decides whether to delete all coordinates from the pipeline after the check or not.
+    
+          false                     keep the coordinates
+          true                      delete all coordinates
+          
+      Default: ]] .. tostring(DefaultTracing.devourCoords)
 
 
   -- Add the default new functions to "ConfigConstructor":
