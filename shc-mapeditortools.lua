@@ -30,7 +30,9 @@ This console is used to configure additional map editor features.
     feature("parameter")                displays parameter help text
     feature("parameter", value)         assign a new value to a feature parameter
 
+
 To get the current configurations you can use:
+
 
     status                              get all parameters of the active features
     return feature.parameter            get the value of one parameter
@@ -59,7 +61,7 @@ WARNING: The "QuickEdit"-mode of the windows console will freeze the game if a f
   The text will contain the value "active". However, non-active features are filtered.
   
   Note: The "func" value is received, but is not placed into the string.
-  
+
   @TheRedDaemon
 ]]--
 function getStatus()
@@ -72,8 +74,14 @@ function getStatus()
     local featureStatus = feature:getPublicStatus()
     -- only active
     if featureStatus.active ~= nil and featureStatus.active == true then
-      statusTable[count] = "\n" .. tostring(featureCounter) .. ". " .. tostring(featureStatus.__name) .. "\n"
-      count = count + 1
+      if count == 2 then
+        statusTable[count] = "\n\t\t\tCLICK\n"
+        count = count + 1
+      end
+      
+      statusTable[count] = "\n\t\t\t ||\n\t\t\t \\/\n\n"
+      statusTable[count + 1] = tostring(featureCounter) .. ". " .. tostring(featureStatus.__name) .. "\n"
+      count = count + 2
       featureCounter = featureCounter + 1
       
       for field, value in pairs(featureStatus) do
@@ -89,6 +97,8 @@ function getStatus()
   
   if count < 3 then
     statusTable[count] = "No feature active at the moment.\n"
+  else
+    statusTable[count] = "\n\t\t\t ||\n\t\t\t \\/\n\n\t\t\tGAME\n"
   end
 
   return table.concat(statusTable)
@@ -197,12 +207,13 @@ end
   
   "centeringExp" is the exponent used on a random value between 0 and 1. Higher values increase
   the chance that the deviation is small and the resulting coord more centered. Should be 1 or bigger.
-  Max deviation for both axes is set by "size".
+  Max deviation for both axes is set by the difference between "sizeMin" and "sizeMax".
   
   @TheRedDaemon
 ]]--
-function randomSprayDeviation(centeringExp, size)
-  local rand = round((math.random()^centeringExp) * size)
+function randomSprayDeviation(centeringExp, sizeMin, sizeMax)
+  local range = sizeMax - sizeMin
+  local rand = round((math.random()^centeringExp) * range) + sizeMin
   rand = math.random() < 0.5 and -rand or rand -- plus or minus
   return rand
 end
@@ -528,9 +539,12 @@ end
 
 
 --[[
-  Modifies all coords in coordlist by adding a random deviation.
+  Modifies coords in coordlist by adding a random deviation.
   
-  If config.sprayInt < 1, this function will build a new coordlist with the remaining coords. 
+  If config.sprayInt < 1 or config.keepOriginalCoord, this function will build
+  a new coordlist with the remaining coords.
+  For a description of the config parameters see default values or HELP text.
+  
   Produces coordinate duplicates.
 
   @TheRedDaemon
@@ -542,25 +556,118 @@ function applySpray(config, coordlist, size)
   
   local sprayInt = config.sprayInt
   local sprayExp = config.sprayExp
-  local spraySize = config.spraySize
   
-  if sprayInt < 1 then
-    local newCoordlist = {}
+  -- very simple structure, easy to break, but should be ok
+  local sprayMin = config.sprayMin
+  local sprayMax = config.sprayMax
   
-    for _, coord in ipairs(coordlist) do
-      -- only add coord if random number smaller then sprayInt
-      if math.random() < sprayInt then
-        coord[1] = coord[1] + randomSprayDeviation(sprayExp, spraySize)
-        coord[2] = coord[2] + randomSprayDeviation(sprayExp, spraySize)
-        table.insert(newCoordlist, coord)
+  -- requires more complicated algorithm
+  if config.keepOriginalCoord then
+    local sprayIntMode = config.sprayIntMode
+    local coordOrder = config.coordOrder
+    local intOnOrig = sprayIntMode == "original" or sprayIntMode == "both"
+    local intOnDev = sprayIntMode ~= "original" -- always needed, except when "original"
+    
+    if not (coordOrder == "coordOriginal" or coordOrder == "coordDeviated" or
+        coordOrder == "original" or coordOrder == "deviated") then
+      print("No valid coordOrder for spray: " ..coordOrder)
+      return coordlist
+    end
+    
+    if not (intOnOrig or sprayIntMode == "together" or
+        sprayIntMode == "deviated" or sprayIntMode == "separator") then
+      print("No valid sprayIntMode for spray: " ..sprayIntMode)
+      return coordlist
+    end
+    
+    local keepOriginFunc
+    if sprayIntMode == "together" then
+      keepOriginFunc = function(keepDev)
+        return keepDev
+      end
+    elseif sprayIntMode == "separator" then
+      keepOriginFunc = function(keepDev)
+        return not keepDev
+      end
+    else
+      keepOriginFunc = function(keepDev)
+        return not intOnOrig or math.random() < sprayInt
       end
     end
     
-    coordlist = newCoordlist
-  else
+    local originalCoords = {}
+    local deviatedCoords = (coordOrder == "coordOriginal" or
+        coordOrder == "coordDeviated") and originalCoords or {}
+    
+    -- switches coords apply order for "coordDeviated"
+    local coordAddFunc
+    if coordOrder == "coordDeviated" then
+      coordAddFunc = function(origCoord, devCoord)
+        if devCoord ~= nil then
+          table.insert(deviatedCoords, devCoord)
+        end
+        if origCoord ~= nil then
+          table.insert(originalCoords, origCoord)
+        end
+      end
+    else
+      coordAddFunc = function(origCoord, devCoord)
+        if origCoord ~= nil then
+          table.insert(originalCoords, origCoord)
+        end
+        if devCoord ~= nil then
+          table.insert(deviatedCoords, devCoord)
+        end
+      end
+    end
+    
     for _, coord in ipairs(coordlist) do
-      coord[1] = coord[1] + randomSprayDeviation(sprayExp, spraySize)
-      coord[2] = coord[2] + randomSprayDeviation(sprayExp, spraySize)
+      local keepDev = not intOnDev or math.random() < sprayInt 
+      local keepOrigin = keepOriginFunc(keepDev)
+    
+      local origCoord = keepOrigin and coord or nil
+      local devCoord = keepDev and {
+            coord[1] + randomSprayDeviation(sprayExp, sprayMin, sprayMax),
+            coord[2] + randomSprayDeviation(sprayExp, sprayMin, sprayMax)
+          } or nil
+
+      coordAddFunc(origCoord, devCoord)
+    end
+    
+    -- add coords if not already one table
+    if coordOrder == "original" then
+      for _, coord in ipairs(deviatedCoords) do
+        table.insert(originalCoords, coord)
+      end
+    elseif coordOrder == "deviated" then
+      for _, coord in ipairs(originalCoords) do
+        table.insert(deviatedCoords, coord)
+      end
+      
+      originalCoords = deviatedCoords
+    end
+    
+    coordlist = originalCoords
+  else
+    -- "sprayIntMode" or "coordOrder" only has an effect if original is kept
+    if sprayInt < 1 then
+      local newCoordlist = {}
+    
+      for _, coord in ipairs(coordlist) do
+        -- only add coord if random number smaller then sprayInt
+        if math.random() < sprayInt then
+          coord[1] = coord[1] + randomSprayDeviation(sprayExp, sprayMin, sprayMax)
+          coord[2] = coord[2] + randomSprayDeviation(sprayExp, sprayMin, sprayMax)
+          table.insert(newCoordlist, coord)
+        end
+      end
+      
+      coordlist = newCoordlist
+    else
+      for _, coord in ipairs(coordlist) do
+        coord[1] = coord[1] + randomSprayDeviation(sprayExp, sprayMin, sprayMax)
+        coord[2] = coord[2] + randomSprayDeviation(sprayExp, sprayMin, sprayMax)
+      end
     end
   end
   
@@ -1135,7 +1242,19 @@ do
     removeRememberedCoords  =   true            ,   -- "true": coord added to "lastCoords" is removed from the pipeline
     connectShapes           =   false           ,   -- connectShapes: "true": coordlist index is only moved by 1 before the next shape is drawn
                                                     --                "false": uses coords only once, unused remainders are silently discarded
-                            
+             
+    --[[
+      @TheRedDaemon: I am a bit annoyed that this config holds some status.
+      
+      SUGGESTION:
+        Maybe use yet another modification "applyCollector" (or something like this), which collects an amount
+        of coords before giving all of it to the next stage, so one would have an extra system for that.
+        Options could be the number to collect and whether or not the collected coords should be devoured.
+        Issues:
+          - Too complicated for now -> Shape would need two options to work.
+          - Resetting the collections would require some sort of notification, like a "changed brush" or
+            "deselected" tool event.
+    ]]--
     lastCoords              =   {}              ,   -- data: last selected points
                             
     func                    =   applyShape      ,
@@ -1155,11 +1274,15 @@ do
   
   
   local DefaultSpray = DefaultBase:new{
-    sprayExp    =   3               ,   -- defines how centered the random positions should be (higher -> more centered, should be bigger than 1)
-    spraySize   =   8               ,   -- max spray deviation for both axes
-    sprayInt    =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
+    sprayExp            =   3               ,   -- higher -> more centered, should be bigger than 1
+    sprayMax            =   8               ,   -- max spray deviation for both axes
+    sprayMin            =   0               ,   -- min spray deviation for both axes
+    sprayInt            =   0.25            ,   -- intensity -> 0 to 1, if random number bigger, skips the draw call
+    keepOriginalCoord   =   false           ,   -- "true": also applies the original coord alongside the deviated
+    sprayIntMode        =   "both"          ,   -- effect of Int on: "deviated", "original", "both", "together", "separator"
+    coordOrder          =   "original"      ,   -- which coords are applied first: "original", "deviated", "coordOriginal", "coordDeviated"
     
-    func        =   applySpray      ,
+    func                =   applySpray      ,
     
     __name = "Spray Feature Configuration", -- debug info
   }
@@ -1248,8 +1371,8 @@ do
       General activation parameter. Controls whether the feature is active or not.
       This parameter might be set by other parameter changes.
       
-          false                 feature is deactivated
-          true                  feature is active
+          false                     feature is deactivated
+          true                      feature is active
           
       Default: ]] .. tostring(DefaultBase.active)
   
@@ -1268,7 +1391,13 @@ do
           active                        false, true
           sprayExp / exp                >= 1.0
           spraySize / size              >= 0
-          sprayInt / int                0.0 <= value <= 1.0]]
+          sprayMin / min                0 <= value <= sprayMax
+          sprayMax / max                >= sprayMin
+          sprayInt / int                0.0 <= value <= 1.0
+          keepOriginalCoord / keep      false, true
+          sprayIntMode / mode           "deviated", "original", "both", "together", "separator",
+                                            "none", "off"
+          coordOrder / order            "original", "deviated", "coordOriginal", "coordDeviated"]]
   
   -- sprayExp
   sprayFieldUtil.sprayExp = {}
@@ -1289,7 +1418,7 @@ do
       Higher values lead to smaller deviations and more positions close
       to the actual brush coordinate.
           
-          >= 1.0                numbers equal to / bigger than 1.0
+          >= 1.0                    numbers equal to / bigger than 1.0
 
       Default: ]] .. tostring(DefaultSpray.sprayExp)
   
@@ -1314,34 +1443,165 @@ do
       If a random number between 0.0 and 1.0 is bigger than this value, a coordinate is removed.
       This check is made for every coordinate.
                 
-          0.0 <= value <= 1.0   numbers between 0.0 and 1.0 (inclusive)
+          0.0 <= value <= 1.0       numbers between 0.0 and 1.0 (inclusive)
 
       Default: ]] .. tostring(DefaultSpray.sprayInt)
   
   sprayFieldUtil.int = sprayFieldUtil.sprayInt -- alias
   
-  -- spraySize
-  sprayFieldUtil.spraySize = {}
+  -- sprayMin
+  sprayFieldUtil.sprayMin = {}
   
-  function sprayFieldUtil.spraySize.set(config, field, value)
-    local res = isInteger(value) and isInRange(value, 0, nil, ">= 0")
+  function sprayFieldUtil.sprayMin.set(config, field, value)
+    local res = isInteger(value) and isInRange(value, 0, config.sprayMax, "0 <= value <= sprayMax")
     if res then
-      config.spraySize = value
-      print("Set spray size to: ", value)
+      config.sprayMin = value
+      print("Set spray min to: ", value)
     end
     return res
   end
   
-  sprayFieldUtil.spraySize.help = [[
+  sprayFieldUtil.sprayMin.help = [[
     
-      "spraySize", alias: "size"
+      "sprayMin", alias: "min"
+      This value sets the minimal deviation from the actual brush position for both axes.
+
+          0 <= value <= sprayMax    whole numbers equal to / bigger than 0 and
+                                        smaller / equal to the parameter "sprayMax"
+
+      Default: ]] .. tostring(DefaultSpray.sprayMin)
+  
+  sprayFieldUtil.min = sprayFieldUtil.sprayMin -- alias
+  
+  -- sprayMax
+  sprayFieldUtil.sprayMax = {}
+  
+  function sprayFieldUtil.sprayMax.set(config, field, value)
+    local res = isInteger(value) and isInRange(value, config.sprayMin, nil, ">= sprayMin")
+    if res then
+      config.sprayMax = value
+      print("Set spray max to: ", value)
+    end
+    return res
+  end
+  
+  sprayFieldUtil.sprayMax.help = [[
+    
+      "sprayMax", alias: "max"
       This value sets the maximal deviation from the actual brush position for both axes.
 
-          >= 0                  whole numbers equal to / bigger than 0
+          >= sprayMin               whole numbers equal to / bigger than the parameter "sprayMin"
 
-      Default: ]] .. tostring(DefaultSpray.spraySize)
+      Default: ]] .. tostring(DefaultSpray.sprayMax)
   
-  sprayFieldUtil.size = sprayFieldUtil.spraySize -- alias
+  sprayFieldUtil.max = sprayFieldUtil.sprayMax -- alias
+  
+  -- keepOriginalCoord
+  sprayFieldUtil.keepOriginalCoord = {}
+  
+  function sprayFieldUtil.keepOriginalCoord.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.keepOriginalCoord = value
+      if value then
+        print("Original coordinates are kept in the pipeline.")
+      else
+        print("Original coordinates are removed from the pipeline.")
+      end
+    end
+    return res
+  end
+  
+  sprayFieldUtil.keepOriginalCoord.help = [[
+    
+      "keepOriginalCoord", alias: "keep"
+      This value defines how to handle the original coordinates.
+      If they are kept, then they are not effected by deviation, but potentially intensity.
+
+          false                     original coordinates are removed
+          true                      original coordinates stay and may be effected by intensity
+
+      Default: ]] .. tostring(DefaultSpray.keepOriginalCoord)
+  
+  sprayFieldUtil.keep = sprayFieldUtil.keepOriginalCoord -- alias
+  
+  -- sprayIntMode
+  sprayFieldUtil.sprayIntMode = {}
+  
+  function sprayFieldUtil.sprayIntMode.set(config, field, value)
+    local res = isString(value)
+    if res then
+      if value == "none" or value == "off" then
+        config.keepOriginalCoord = false
+        print("Original coordinates are not kept anymore.")
+      elseif value == "deviated" or value == "original" or
+          value == "both" or value == "together" or
+          value == "separator" then
+        config.sprayIntMode = value
+        config.keepOriginalCoord = true
+        print("Original coordinates are kept and intensity mode is set to: ", value)
+      else
+        res = false
+        print("No valid intensity mode: ", value)
+      end
+    end
+    return res
+  end
+  
+  sprayFieldUtil.sprayIntMode.help = [[
+    
+      "sprayIntMode", alias: "mode"
+      Defines how intensity effects the deviated original and deviated coordinates.
+      Only relevant if "keepOriginalCoord" is true and active.
+      Setting values other than "none" or "off" will also activate "keepOriginalCoord".
+
+          "deviated"                effects the deviated coordinates; original are always applied
+          "original"                effects the original coordinates; deviated are always applied
+          "both"                    effects both coordinates independent from each other
+          "together"                either both or no coordinates are applied
+          "separator"               intensity applies to deviated coordinates; uses original
+                                        if deviated is not used
+          "none" / "off"            disables "keepOriginalCoord"
+
+      Default: ]] .. tostring(DefaultSpray.sprayIntMode)
+  
+  sprayFieldUtil.mode = sprayFieldUtil.sprayIntMode -- alias
+  
+  -- coordOrder
+  sprayFieldUtil.coordOrder = {}
+  
+  function sprayFieldUtil.coordOrder.set(config, field, value)
+    local res = isString(value)
+    if res then
+      if value == "original" or value == "deviated" or
+          value == "coordOriginal" or value == "coordDeviated" then
+        config.coordOrder = value
+        print("Set coordinate order to: ", value)
+      else
+        res = false
+        print("No valid coordinate order: ", value)
+      end
+    end
+    return res
+  end
+  
+  sprayFieldUtil.coordOrder.help = [[
+    
+      "coordOrder", alias: "order"
+      Defines how the coordinates are ordered in the pipeline after the spray is applied.
+      Only relevant if "keepOriginalCoord" is true and active, since this value defines
+      the order of the original and deviated coordinates.
+
+          "original"                all original coordinates first
+          "deviated"                all deviated coordinates first
+          "coordOriginal"           if both coordinates are applied, apply the original first,
+                                        then the deviated    
+          "coordDeviated"           if both coordinates are applied, apply the deviated first,
+                                        then the original
+
+      Default: ]] .. tostring(DefaultSpray.coordOrder)
+  
+  sprayFieldUtil.order = sprayFieldUtil.coordOrder -- alias
   
   
   -- // mirror
@@ -1390,14 +1650,14 @@ do
       The type of mirror to apply.
       Setting values other than "none" or "off" will also activate this feature.
 
-          "horizontal"          mirror around the horizontal
-          "vertical"            mirror around the vertical
-          "diagonal_x"          mirror around the direction of the x-coordinates
-          "diagonal_y"          mirror around the direction of the y-coordinates
-          "point"               mirror around the center of the map
+          "horizontal"              mirror around the horizontal
+          "vertical"                mirror around the vertical
+          "diagonal_x"              mirror around the direction of the x-coordinates
+          "diagonal_y"              mirror around the direction of the y-coordinates
+          "point"                   mirror around the center of the map
           "quadrant_before"         mirrors actions in the clockwise next quadrant
           "quadrant_after"          mirrors actions in the counterclockwise next quadrant
-          "none" / "off"        disables this mirror feature
+          "none" / "off"            disables this mirror feature
 
       Default: ]] .. tostring(DefaultMirror.mirrorMode)
   
@@ -1425,8 +1685,8 @@ do
       "coordOrder", alias: "order"
       Defines the order of coordinates after they are mirrored.
 
-          "shape"               received coordinates are mirrored as a whole and then attached to the list
-          "coord"               every single coordinate will be followed by its mirrored version
+          "shape"                   received coordinates are mirrored as a whole and then attached to the list
+          "coord"                   every single coordinate will be followed by its mirrored version
 
       Default: ]] .. tostring(DefaultMirror.coordOrder)
   
@@ -1486,11 +1746,11 @@ do
       The type of shape to apply.
       Setting values other than "none" or "off" will also activate this feature.
         
-          "line"                a simple line between two points
-          "rect"                rectangle seen from the front; coordinates define edges
-          "rect45"              rectangle along the diagonals; coordinates define edges
-          "circle"              a circle; first coordinate sets middle, second the radius
-          "none" / "off"        disables this shape feature
+          "line"                    a simple line between two points
+          "rect"                    rectangle seen from the front; coordinates define edges
+          "rect45"                  rectangle along the diagonals; coordinates define edges
+          "circle"                  a circle; first coordinate sets middle, second the radius
+          "none" / "off"            disables this shape feature
 
       Default: ]] .. tostring(DefaultShape.shape)
   
@@ -1516,8 +1776,8 @@ do
       The shape feature stores a coordinate should it receive only one without having stored any.
       This value indicates whether this first coordinate is discarded or passed further.
  
-          false                 keeps the coordinate in the pipeline
-          true                  remembered coordinate is discarded
+          false                     keeps the coordinate in the pipeline
+          true                      remembered coordinate is discarded
 
       Default: ]] .. tostring(DefaultShape.removeRememberedCoords)
    
@@ -1545,8 +1805,8 @@ do
       The shape modification may receive multiple coordinates and then tries to create multiple shapes.
       This value decides how the coordinates are used.
       
-          false                 coordinates are only used once
-          true                  coordinates are reused; for example, lines are connected
+          false                     coordinates are only used once
+          true                      coordinates are reused; for example, lines are connected
 
       Default: ]] .. tostring(DefaultShape.connectShapes)
    
