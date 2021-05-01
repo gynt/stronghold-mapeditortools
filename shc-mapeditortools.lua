@@ -39,12 +39,19 @@ To get the current configurations you can use:
 
 The following features are implemented and currently applied in the order they are mentioned:
 
-    shape, spray, shape2, mirror, mirror2
+    tracing, shape, spray, shape2, rotation, mirror, mirror2, tracing2
 
 Use for example "mirror()" to get an explanation and a parameter list.
 
 WARNING: Currently max 200 actions are supported. Big shapes, especially when mirrored, reach
          this limit very fast. So do not be surprised if only one half of a shape appears.
+         
+WARNING: The "QuickEdit"-mode of the windows console will freeze the game if a function wants
+         to print something while the console is in "Selection"-mode.
+         Either press "escape" or use right click or some key to leave this mode,
+         or disable the "QuickEdit"-mode with:
+            
+            Right click on title bar -> Properties -> Options -> QuickEdit
 ]]
 
 
@@ -54,7 +61,6 @@ WARNING: Currently max 200 actions are supported. Big shapes, especially when mi
   The text will contain the value "active". However, non-active features are filtered.
   
   Note: The "func" value is received, but is not placed into the string.
-
 
   @TheRedDaemon
 ]]--
@@ -66,7 +72,6 @@ function getStatus()
   local featureCounter = 1
   for _, feature in ipairs(ACTIVE_TRANSFORMATIONS) do
     local featureStatus = feature:getPublicStatus()
-
     -- only active
     if featureStatus.active ~= nil and featureStatus.active == true then
       if count == 2 then
@@ -159,6 +164,10 @@ function countCoordDuplicates(coordTable, display)
     display = false -- default
   end
   
+  if display == true then
+    print("    Duplicates:")
+  end
+  
   local numberOfDuplicates = 0
   for indexOne, coordOne in ipairs(coordTable) do
     for indexTwo, coordTwo in ipairs(coordTable) do
@@ -167,11 +176,19 @@ function countCoordDuplicates(coordTable, display)
         numberOfDuplicates = numberOfDuplicates + 1
       
         if display then
-          print("Duplicate found: " ..coordOne[1] ..":" ..coordOne[2])
+          print("        Duplicate " .. numberOfDuplicates .. ": " .. coordOne[1] .. ":" .. coordOne[2])
         end
       end
     end
   end
+  
+  if display == true then
+    if numberOfDuplicates == 0 then
+      print("        No duplicates.")
+    end
+    print("")
+  end
+  
   return numberOfDuplicates
 end
 
@@ -396,7 +413,8 @@ end
 ]]--
 function isValidMirrorMode(mirrorMode)
   if mirrorMode == "point" or mirrorMode == "horizontal" or mirrorMode == "vertical" or
-      mirrorMode == "diagonal_x" or mirrorMode == "diagonal_y" then
+      mirrorMode == "diagonal_x" or mirrorMode == "diagonal_y" or
+      mirrorMode == "quadrant_before" or mirrorMode == "quadrant_after" then
     return true
   else
     print("Don't know this mirror mode: " .. mirrorMode)
@@ -405,21 +423,11 @@ function isValidMirrorMode(mirrorMode)
 end
 
 
--- @gynt
+-- @gynt, @Krarilotus, @TheRedDaemon
 function applyMirrorFunction(x, y, size, mirrorMode)
   local newx = x
   local newy = y
   
-  --[[
-    @TheRedDaemon:
-  
-    SUGGESTION: "point" is also a rotation
-    -> maybe add the ability to apply a point rotation to the action instead
-      - so that I could mirror the action in 4 corners, or even 8
-      - center is between 199 and 200, so rotation likely requires translation by -199.5 before
-      - Note -> do not forget to also use "size" for this rotations in some way; it is ignored by
-                other modifications so far...
-  ]]--
   if mirrorMode == "point" then
     newx = (399 - x) - (size - 1)
     newy = (399 - y) - (size - 1)
@@ -435,6 +443,12 @@ function applyMirrorFunction(x, y, size, mirrorMode)
   elseif mirrorMode == "diagonal_y" then
     newx = 399 - x - (size - 1)
     newy = y
+  elseif mirrorMode == "quadrant_before" then
+    newx = 400 - y - size
+    newy = x
+  elseif mirrorMode == "quadrant_after" then
+    newx = y
+    newy = 400 - x - size
   end
   -- @TheRedDaemon: Fails silently to not clutter the console.
   
@@ -718,6 +732,139 @@ function applyMirror(config, coordlist, size)
 end
 
 
+--[[
+  Mirrors the coordinates around a defined center using rotation.
+  The coordinates are applied clockwise.
+  
+  For explanation "coordOrder" see "applyMirrors".
+  Produces coordinate duplicates.
+  
+  source: https://en.wikipedia.org/wiki/Rotation_matrix
+
+  @TheRedDaemon
+]]--
+function applyRotationMirror(config, coordlist, size)
+  local numberOfPoints = config.numberOfPoints
+  if not config.active or isTableEmpty(coordlist) or numberOfPoints < 2 then
+    return coordlist
+  end
+  
+  local coordOrder = config.coordOrder
+  if not (coordOrder == "coord" or coordOrder == "shape") then
+    print("No valid coordinate order: " ..coordOrder)
+    return coordlist
+  end
+  
+  -- create transformation values
+  local translationX = config.rotationCenterX - size / 2.0
+  local translationY = config.rotationCenterY - size / 2.0
+  local sinValues = {}
+  local cosValues = {}
+  local rotationAngle = 2 * math.pi / numberOfPoints
+  for index = 1, numberOfPoints - 1 do
+    table.insert(sinValues, math.sin(rotationAngle * index))
+    table.insert(cosValues, math.cos(rotationAngle * index))
+  end
+  
+  if coordOrder == "coord" then
+    local newCoordTable = {}
+    
+    for _, coord in ipairs(coordlist) do
+      local centeredX = coord[1] - translationX
+      local centeredY = coord[2] - translationY
+    
+      table.insert(newCoordTable, coord)
+      for rotIndex = 1, numberOfPoints - 1 do
+        table.insert(newCoordTable, {
+          round(centeredX * cosValues[rotIndex] 
+            - centeredY * sinValues[rotIndex] + translationX),
+          round(centeredX * sinValues[rotIndex]
+            + centeredY * cosValues[rotIndex] + translationY)
+        })
+      end
+    end
+    coordlist = newCoordTable
+    
+  elseif coordOrder == "shape" then
+    local numberOfCoords = #coordlist
+    
+    for rotIndex = 1, numberOfPoints - 1 do
+      for coordIndex = 1, #coordlist do
+        local centeredX = coordlist[coordIndex][1] - translationX
+        local centeredY = coordlist[coordIndex][2] - translationY
+      
+        table.insert(coordlist, {
+          round(centeredX * cosValues[rotIndex] 
+            - centeredY * sinValues[rotIndex] + translationX),
+          round(centeredX * sinValues[rotIndex]
+            + centeredY * cosValues[rotIndex] + translationY)
+        })
+      end
+    end
+  end
+  
+  -- print("Number of coord duplicates after applying rotation mirrors: " ..countCoordDuplicates(coordlist)) -- debug
+  
+  return coordlist
+end
+
+
+--[[
+  Provides some tracing functions.
+  
+  Check the help texts or the default configuration for more information.
+
+  @TheRedDaemon
+]]--
+function applyTracing(config, coordlist, size)
+  if not config.active then
+    return coordlist
+  end
+  
+  if config.printTracingName then
+    print("")
+    print(config.tracingName ..":")
+  end
+  
+  if config.printFirstCoord then
+    print("")
+    if isTableEmpty(coordlist) then
+      print("    No coordinates. Can not print first.")
+    else
+      print("    First Coordinate: " ..coordlist[1][1] ..":" ..coordlist[1][2])
+    end
+  end
+  
+  if config.printAllCoords then
+    print("")
+    print("    All coordinates:")
+    if isTableEmpty(coordlist) then
+      print("        No coordinates.")
+    else
+      for index, coord in ipairs(coordlist) do
+        print("        Coordinate " ..index ..": " ..coord[1] ..":" ..coord[2])
+      end
+    end
+  end
+  
+  if config.printNumberOfCoords then
+    print("")
+    print("    Total number of coordinates: " .. #coordlist)
+  end
+  
+  if config.printNumberOfDuplicates then
+    print("")
+    print("    Number of coordinate duplicates: " ..countCoordDuplicates(coordlist, config.printDuplicates))
+  end
+  
+  if config.devourCoords then
+    coordlist = {}
+  end
+  
+  return coordlist
+end
+
+
 -- @gynt
 function erase(x, y, brush)
   return applyBrush(x, y, brush)
@@ -776,7 +923,8 @@ end
 --[[
   General function to create coordinatelist.
   
-  WARNING: The only coordinate modification so far that respects "size" is "applyMirror".
+  WARNING: The only coordinate modifications so far that respect "size"
+           are "applyMirror" and "applyRotationMirror".
   
   @TheRedDaemon 
 ]]--
@@ -889,13 +1037,13 @@ do
   
   -- @TheRedDaemon
   local function isBoolean(value)
-    return checkType(value, "boolean", "The given parameter value was not true or false (Boolean).")
+    return checkType(value, "boolean", "The given parameter value is not true or false (Boolean).")
   end
   
   
   -- @TheRedDaemon
   local function isNumber(value)
-    return checkType(value, "number", "The given parameter value was no number.")
+    return checkType(value, "number", "The given parameter value is no number.")
   end
   
   
@@ -903,7 +1051,7 @@ do
   local function isInteger(value)
     local res = isNumber(value)
     if res and math.floor(value) ~= value then
-      print("The given parameter value was no whole number (Integer).")
+      print("The given parameter value is no whole number (Integer).")
       res = false
     end
     return res
@@ -912,7 +1060,7 @@ do
   
   -- @TheRedDaemon
   local function isString(value)
-    return checkType(value, "string", "The given parameter value was no string.")
+    return checkType(value, "string", "The given parameter value is no string.")
   end
   
   
@@ -1115,7 +1263,8 @@ do
   }
   
   local DefaultMirror = DefaultBase:new{
-    mirrorMode  =   "point"         ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point"
+    mirrorMode  =   "point"         ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
+                                        --                 "quadrant_before", "quadrant_after"
     coordOrder  =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
     
     func        =   applyMirror     ,
@@ -1138,6 +1287,33 @@ do
     __name = "Spray Feature Configuration", -- debug info
   }
   
+  
+  local DefaultRotationMirror = DefaultBase:new{
+    numberOfPoints  =   2                   ,   -- how many points will be the result (mirrors = numberOfPoints - 1)
+    rotationCenterX =   200                 ,   -- x-coordinate of the rotation center
+    rotationCenterY =   200                 ,   -- y-coordinate of the rotation center
+    coordOrder      =   "coord"             ,   -- order of coordinates after mirroring: "shape", "coord"
+    
+    func            =   applyRotationMirror ,
+    
+    __name = "Rotation Mirror Feature Configuration", -- debug info
+  }
+  
+  
+  local DefaultTracing = DefaultBase:new{
+    printTracingName        =   true            ,   -- should the tracing name be printed
+    tracingName             =   "Tracing"       ,   -- name printed on execution
+    printFirstCoord         =   true            ,   -- print the first coord in the coordlist, equal to click if utility first
+    printAllCoords          =   true            ,   -- prints all coords
+    printNumberOfCoords     =   true            ,   -- count the number of coords and print it
+    printNumberOfDuplicates =   true            ,   -- count the number of duplicates and print it
+    printDuplicates         =   true            ,   -- if they are counted, all duplicates are also printed  
+    devourCoords            =   false           ,   -- delete all coords from the pipeline
+    
+    func                    =   applyTracing    ,
+    
+    __name = "Tracing Feature Configuration", -- debug info
+  }
 
   --[[
     Create all _FieldUtil_ for the configurations.
@@ -1441,7 +1617,7 @@ do
       Parameter                     Possible values
           active                        false, true
           mirrorMode / mode             "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
-                                            "none", "off"
+                                            "quadrant_before", "quadrant_after", "none", "off"
           coordOrder / order            "shape", "coord"]]
   
   -- mirrorMode
@@ -1455,7 +1631,8 @@ do
         print("Mirror deactivated.")
       elseif value == "horizontal" or value == "vertical" or
           value == "diagonal_x" or value == "diagonal_y" or
-          value == "point" then
+          value == "point" or value == "quadrant_before" or
+          value == "quadrant_after" then
         config.mirrorMode = value
         config.active = true
         print("Set mirror active and to mode: ", value)
@@ -1478,6 +1655,8 @@ do
           "diagonal_x"              mirror around the direction of the x-coordinates
           "diagonal_y"              mirror around the direction of the y-coordinates
           "point"                   mirror around the center of the map
+          "quadrant_before"         mirrors actions in the clockwise next quadrant
+          "quadrant_after"          mirrors actions in the counterclockwise next quadrant
           "none" / "off"            disables this mirror feature
 
       Default: ]] .. tostring(DefaultMirror.mirrorMode)
@@ -1525,7 +1704,12 @@ do
       This feature uses the received coordinates to generate a shape of coordinates.
       If it receives only one, it is remembered until it receives a second one to build a shape with.
       Should it receive more than one, it will try to generate as many shapes as it has coordinates for.
-      WARNING: The remembered coordinate is only invalidated after use or after disabling this feature.
+      
+      WARNING:
+          - The remembered coordinate is only invalidated after use or after disabling this feature.
+          - Some transformations, like creating hills, may display wrong tiles until the view
+            is rotated at least once when being applied. This seems to be a vanilla game bug.
+            If not changed this way, the tiles will be visually bugged in the normal game.
       
       Parameter                     Possible values
           active                        false, true
@@ -1627,6 +1811,365 @@ do
       Default: ]] .. tostring(DefaultShape.connectShapes)
    
   shapeFieldUtil.connect = shapeFieldUtil.connectShapes -- alias
+  
+  
+  -- // rotation mirror
+  DefaultRotationMirror._FieldUtil_ = {}
+  local rotationFieldUtil = DefaultRotationMirror._FieldUtil_
+  
+  rotationFieldUtil[DefaultRotationMirror.__name] = {}
+  rotationFieldUtil[DefaultRotationMirror.__name].help = [[
+    
+      ## Rotation Mirroring ##
+      Mirrors the actions around a defined center.
+      The requested actions are evenly placed on a circle.
+      
+      Parameter                     Possible values
+          active                        false, true
+          numberOfPoints / points       >= 1
+          rotationCenterX / x           whole numbers
+          rotationCenterY / y           whole numbers
+          coordOrder / order            "shape", "coord"]]
+  
+  -- numberOfPoints
+  rotationFieldUtil.numberOfPoints = {}
+  
+  function rotationFieldUtil.numberOfPoints.set(config, field, value)
+    local res = isInteger(value) and isInRange(value, 1, nil, ">= 1")
+    if res then
+      config.numberOfPoints = value
+      
+      if value == 1 then
+        config.active = false
+        print("Disabled rotation mirror.")
+      else
+        config.active = true
+        print("Enabled rotation mirror and set number of points to: ", value)
+      end
+    end
+    return res
+  end
+  
+  rotationFieldUtil.numberOfPoints.help = [[
+    
+      "numberOfPoints", alias: "points"
+      This value defines the number of actions to place around the center.
+      Setting it to "1" deactivates the feature, higher values enable it.
+
+          >= 1                      whole numbers equal to / bigger than 1
+
+      Default: ]] .. tostring(DefaultRotationMirror.numberOfPoints)
+  
+  rotationFieldUtil.points = rotationFieldUtil.numberOfPoints -- alias
+  
+  -- rotationCenterX
+  rotationFieldUtil.rotationCenterX = {}
+  
+  function rotationFieldUtil.rotationCenterX.set(config, field, value)
+    local res = isInteger(value)
+    if res then
+      config.rotationCenterX = value
+      print("Set x-coordinate of rotation center to: ", value)
+    end
+    return res
+  end
+  
+  rotationFieldUtil.rotationCenterX.help = [[
+    
+      "rotationCenterX", alias: "x"
+      The x-coordinate of the rotation center.
+      The map has a size of 400x400, with the center being at 200.
+
+          25, 200, 345, ...         whole numbers
+
+      Default: ]] .. tostring(DefaultRotationMirror.rotationCenterX)
+  
+  rotationFieldUtil.x = rotationFieldUtil.rotationCenterX -- alias
+  
+  -- rotationCenterY
+  rotationFieldUtil.rotationCenterY = {}
+  
+  function rotationFieldUtil.rotationCenterY.set(config, field, value)
+    local res = isInteger(value)
+    if res then
+      config.rotationCenterY = value
+      print("Set y-coordinate of rotation center to: ", value)
+    end
+    return res
+  end
+  
+  rotationFieldUtil.rotationCenterY.help = [[
+    
+      "rotationCenterY", alias: "y"
+      The y-coordinate of the rotation center.
+      The map has a size of 400x400, with the center being at 200.
+
+          25, 200, 345, ...         whole numbers
+
+      Default: ]] .. tostring(DefaultRotationMirror.rotationCenterY)
+  
+  rotationFieldUtil.y = rotationFieldUtil.rotationCenterY -- alias
+  
+  -- coordOrder
+  rotationFieldUtil.coordOrder = {}
+  
+  function rotationFieldUtil.coordOrder.set(config, field, value)
+    local res = isString(value)
+    if res then
+      if value == "shape" or value == "coord" then
+        config.coordOrder = value
+        print("Set coordinate order to: ", value)
+      else
+        res = false
+        print("No valid coordinate order: ", value)
+      end
+    end
+    return res
+  end
+  
+  rotationFieldUtil.coordOrder.help = [[
+    
+      "coordOrder", alias: "order"
+      Defines the order of coordinates after they are mirrored.
+      However, the mirrored coordinates are created clockwise, regardless of this setting.
+
+          "shape"                   received coordinates are mirrored as a whole and then attached to the list
+          "coord"                   every single coordinate will be followed by its mirrored versions
+
+      Default: ]] .. tostring(DefaultRotationMirror.coordOrder)
+  
+  rotationFieldUtil.order = rotationFieldUtil.coordOrder -- alias
+
+
+  -- // tracing
+  DefaultTracing._FieldUtil_ = {}
+  local tracingFieldUtil = DefaultTracing._FieldUtil_
+  
+  tracingFieldUtil[DefaultTracing.__name] = {}
+  tracingFieldUtil[DefaultTracing.__name].help = [[
+    
+      ## Tracing ##
+      Allows to display some values in the console.
+      
+      Parameter                     Possible values
+          active                        false, true
+          printTracingName              false, true
+          tracingName                   string    
+          printFirstCoord               false, true
+          printAllCoords                false, true
+          printNumberOfCoords           false, true
+          printNumberOfDuplicates       false, true
+          printDuplicates               false, true
+          devourCoords                  false, true]]
+          
+  -- printTracingName
+  tracingFieldUtil.printTracingName = {}
+  
+  function tracingFieldUtil.printTracingName.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printTracingName = value
+      if value then
+        print("Tracing name is printed.")
+      else
+        print("Tracing name is not printed.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printTracingName.help = [[
+    
+      "printTracingName"
+      A tracing configuration can have a name.
+      This value decides whether it is printed on usage.
+      
+          false                     does not print the tracing name
+          true                      prints the tracing name
+          
+      Default: ]] .. tostring(DefaultTracing.printTracingName)
+      
+  -- tracingName
+  tracingFieldUtil.tracingName = {}
+  
+  function tracingFieldUtil.tracingName.set(config, field, value)
+    local res = isString(value)
+    if res then
+      config.tracingName = value
+      print("Set tracing name to: ", value)
+    end
+    return res
+  end
+  
+  tracingFieldUtil.tracingName.help = [[
+    
+      "tracingName"
+      The name of this tracing configuration.
+      
+          string                    a string; example: "Tracing"
+          
+      Default: ]] .. tostring(DefaultTracing.tracingName)
+  
+  -- printFirstCoord
+  tracingFieldUtil.printFirstCoord = {}
+  
+  function tracingFieldUtil.printFirstCoord.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printFirstCoord = value
+      if value then
+        print("Prints the first received coordinate.")
+      else
+        print("Does not print the first received coordinate.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printFirstCoord.help = [[
+    
+      "printFirstCoord"
+      This value decides whether the first coordinate this feature receives during execution should be printed.
+      
+          false                     does not print the first received coordinate
+          true                      prints the first received coordinate
+          
+      Default: ]] .. tostring(DefaultTracing.printFirstCoord)
+      
+  -- printAllCoords
+  tracingFieldUtil.printAllCoords = {}
+  
+  function tracingFieldUtil.printAllCoords.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printAllCoords = value
+      if value then
+        print("Prints all received coordinates.")
+      else
+        print("Does not print the received coordinates.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printAllCoords.help = [[
+    
+      "printAllCoords"
+      This value decides whether all coordinates this feature receives during execution should be printed.
+      
+          false                     does not print all received coordinates
+          true                      prints all received coordinates
+          
+      Default: ]] .. tostring(DefaultTracing.printAllCoords)
+      
+  -- printNumberOfCoords
+  tracingFieldUtil.printNumberOfCoords = {}
+  
+  function tracingFieldUtil.printNumberOfCoords.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printNumberOfCoords = value
+      if value then
+        print("Prints number of all coordinates.")
+      else
+        print("Does not print number of all coordinates.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printNumberOfCoords.help = [[
+    
+      "printNumberOfCoords"
+      This value decides whether the number of all received coordinates should be printed.
+      
+          false                     does not print number
+          true                      print number of all received coordinates
+          
+      Default: ]] .. tostring(DefaultTracing.printNumberOfCoords)
+      
+  -- printNumberOfDuplicates
+  tracingFieldUtil.printNumberOfDuplicates = {}
+  
+  function tracingFieldUtil.printNumberOfDuplicates.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printNumberOfDuplicates = value
+      if value then
+        print("Prints number of noticed coordinate duplicates.")
+      else
+        print("Does not print number of noticed coordinate duplicates.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printNumberOfDuplicates.help = [[
+    
+      "printNumberOfDuplicates"
+      This value decides whether the number of all noticed coordinate duplicates should be printed.
+      
+          false                     does not print number
+          true                      print number of all noticed coordinate duplicates
+          
+      Default: ]] .. tostring(DefaultTracing.printNumberOfDuplicates)
+      
+  -- printDuplicates
+  tracingFieldUtil.printDuplicates = {}
+  
+  function tracingFieldUtil.printDuplicates.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.printDuplicates = value
+      if value then
+        config.printNumberOfDuplicates = true
+        print("Print all coordinate duplicate information.")
+      else
+        print("Does not print all noticed coordinate duplicates.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.printDuplicates.help = [[
+    
+      "printDuplicates"
+      This value decides whether all noticed coordinate duplicates should be printed.
+      Since the printing takes place during the counting, setting this to "true" will also
+      activate "printNumberOfDuplicates".
+      Setting it to "false" however will not deactivate "printNumberOfDuplicates".
+      
+      
+          false                     do not print all noticed coordinate duplicates
+          true                      print all noticed coordinate duplicates
+          
+      Default: ]] .. tostring(DefaultTracing.printDuplicates)
+      
+  -- devourCoords
+  tracingFieldUtil.devourCoords = {}
+  
+  function tracingFieldUtil.devourCoords.set(config, field, value)
+    local res = isBoolean(value)
+    if res then
+      config.devourCoords = value
+      if value then
+        print("Received coordinates are removed.")
+      else
+        print("Received coordinates are passed on.")
+      end
+    end
+    return res
+  end
+  
+  tracingFieldUtil.devourCoords.help = [[
+    
+      "devourCoords"
+      This value decides whether to delete all coordinates from the pipeline after the check or not.
+    
+          false                     keep the coordinates
+          true                      delete all coordinates
+          
+      Default: ]] .. tostring(DefaultTracing.devourCoords)
 
 
   -- Add the default new functions to "ConfigConstructor":
@@ -1654,6 +2197,17 @@ do
   function ConfigConstructor.newMirrorConfig(fields)
     return DefaultMirror:new(fields)
   end
+  
+  
+  -- @TheRedDaemon
+  function ConfigConstructor.newRotationMirrorConfig(fields)
+    return DefaultRotationMirror:new(fields)
+  end
+  
+  -- @TheRedDaemon
+  function ConfigConstructor.newTracingConfig(fields)
+    return DefaultTracing:new(fields)
+  end
 end
 
 
@@ -1671,6 +2225,12 @@ shape = ConfigConstructor.newShapeConfig()
 
 shape2 = ConfigConstructor.newShapeConfig()
 
+rotation = ConfigConstructor.newRotationMirrorConfig()
+
+tracing = ConfigConstructor.newTracingConfig()
+
+tracing2 = ConfigConstructor.newTracingConfig{ tracingName = "Tracing 2" }
+
 
 --[[
   Coordinate modification order
@@ -1681,9 +2241,12 @@ shape2 = ConfigConstructor.newShapeConfig()
   @TheRedDaemon
 ]]--
 ACTIVE_TRANSFORMATIONS = {
-   shape        ,           -- 1. draw shape
-   spray        ,           -- 2. mess it up
-   shape2       ,           -- 3. maybe create more complex shape
-   mirror       ,           -- 4. mirror
-   mirror2      ,           -- 5. second mirror
+  tracing       ,           -- 1. check some stuff
+  shape         ,           -- 2. draw shape
+  spray         ,           -- 3. mess it up
+  shape2        ,           -- 4. maybe create more complex shape
+  rotation      ,           -- 5. mirror using rotation
+  mirror        ,           -- 6. mirror
+  mirror2       ,           -- 7. second mirror
+  tracing2      ,           -- 8. check stuff again
 }
