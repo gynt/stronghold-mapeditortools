@@ -3,8 +3,8 @@
   @TheRedDaemon:
   Some bigger restructuring might be necessary (one day). Among that:
     - even MORE visual space between function complexes?
-    - maybe some better helper functions for the config support functions
-    - global create alias function
+    - maybe some better helper functions for the config support functions (ideas for more?)
+    - maybe parameter protection (using proxy table or gynts idea with "_" + paramter)?
 ]]--
 
 --[[--
@@ -263,6 +263,28 @@ end
 
 
 --[[
+  Helper function. Searches metatables for a _FieldUtil_ that contains the requested field.
+  Returns the found util for the field or "nil" if no fitting util in the _FieldUtil_s was found.
+
+  @TheRedDaemon
+]]--
+function DefaultBase:receiveUtilForField(field)
+  local util = self._FieldUtil_[field]
+  if util ~= nil then
+    return util
+  end
+  
+  self = getmetatable(self) -- check parent for validation or help text
+  if self == nil then
+    return nil
+  end
+
+  return self:receiveUtilForField(field) -- recursive
+end
+
+
+
+--[[
   General function to set a field in the configuration.
   Also prints help texts.
   
@@ -282,21 +304,14 @@ function DefaultBase:setField(field, value)
     return false
   end
   
-  local fieldUtil = nil
-  local currentClass = self
-  repeat
-    fieldUtil = currentClass._FieldUtil_[field]
-    if fieldUtil == nil then
-      currentClass = getmetatable(currentClass) -- check parent for validation or help text
-      if currentClass == nil then
-        print("No parameter handler for this name found: ", field)
-        return false
-      end
-    end
-  until (fieldUtil ~= nil)
+  local utilForField = self:receiveUtilForField(field)
+  if utilForField == nil then
+    print("No parameter handler for this name found: ", field)
+    return false
+  end
   
   if value == nil then
-    local fieldText = fieldUtil.help
+    local fieldText = utilForField.help
     if fieldText == nil then
       fieldText = "No parameter description found."
     end
@@ -304,7 +319,7 @@ function DefaultBase:setField(field, value)
     return false
   end
   
-  return fieldUtil.set(self, field, value)
+  return utilForField.set(self, field, value)
 end
 
 
@@ -412,7 +427,93 @@ end
 
 
 
--- TODO
+--[[
+  A helper function to set a boolean configuration value.
+  
+  If "setTrueMsg" and/or "setFalseMsg" are unequal "nil" they are used in the
+  respective cases instead of a default message.
+
+  @TheRedDaemon
+]]--
+function DefaultBase.setConfigBoolean(config, field, value, setTrueMsg, setFalseMsg)
+  local res = isBoolean(value)
+  if res then
+    config[field] = value
+    if value then
+      print(setTrueMsg == nil and "The parameter is now 'true'." or setTrueMsg)
+    else
+      print(setFalseMsg == nil and "The parameter is now 'false'." or setFalseMsg)
+    end
+  end
+  return res
+end
+
+
+
+--[[
+  A helper function to create a new alias. Returns "true" if an alias was created.
+  Rejects requests that would overwrite an existing alias.
+  
+  The alias is created in the first _FieldUtil_ of the calling object, not in the
+  _FieldUtil_ where the parameter was found!
+  One can hide aliases of lower levels, but no fields.
+
+  @TheRedDaemon
+]]--
+function DefaultBase:createAlias(field, newAlias)
+  if (self[newAlias] ~= nil) then
+    print("New alias would hide field and is rejected: ", newAlias)
+    return false
+  end
+
+  local utilOfField = self:receiveUtilForField(field)
+  if utilOfField == nil then
+    print("No valid parameter or existing alias: ", field)
+    return false
+  end
+
+  local ownFieldUtil = self._FieldUtil_ -- to prevent overwriting in lower levels ("active" for example)
+  if ownFieldUtil[newAlias] ~= nil then
+    if utilOfField == ownFieldUtil[newAlias] then
+      print("Alias already points to the same field.")
+    else
+      print("Alias already used: ", newAlias)
+    end
+    return false
+  else
+    ownFieldUtil[newAlias] = utilOfField
+    print("New alias set.")
+    return true
+  end
+end
+
+
+
+--[[
+  A helper function to remove an alias. Returns "true" if an alias was removed.
+  
+  Removes first instance of an alias found with the name "alias".
+  Rejects requests that would remove the Util of the original parameter.
+  
+  @TheRedDaemon
+]]--
+function DefaultBase:removeAlias(alias)
+  if (self[alias] ~= nil) then
+    print("Can not remove. Actual field: ", alias)
+    return false
+  end
+
+   -- alias can only be set on own level, so it can only be removed there
+  local ownFieldUtil = self._FieldUtil_
+  if ownFieldUtil[alias] == nil then
+    print("No existing alias: ", alias)
+    return false
+  end
+
+  ownFieldUtil[alias] = nil
+  print("Alias removed.")
+  return true
+end
 
 
 
@@ -486,16 +587,9 @@ baseFieldUtil.active = {}
 
 -- set
 function baseFieldUtil.active.set(config, field, value)
-  local res = isBoolean(value)
-  if res then
-    config.active = value
-    if value then
-      print("Feature activated.")
-    else
-      print("Feature deactivated.")
-    end
-  end
-  return res
+  -- config is self; manually set field to avoid problem with aliases
+  return config:setConfigBoolean("active", value,
+      "Feature activated.", "Feature deactivated.")
 end
 
 
@@ -970,16 +1064,9 @@ shapeFieldUtil.removeRememberedCoords = {}
 
 -- set
 function shapeFieldUtil.removeRememberedCoords.set(config, field, value)
-  local res = isBoolean(value)
-  if res then
-    config.removeRememberedCoords = value
-    if value then
-      print("Remembered coordinates are now removed from the pipeline.")
-    else
-      print("Remembered coordinates will stay in the pipeline.")
-    end
-  end
-  return res
+  return config:setConfigBoolean("removeRememberedCoords", value,
+      "Remembered coordinates are now removed from the pipeline.",
+      "Remembered coordinates will stay in the pipeline.")
 end
 
 
@@ -1015,16 +1102,9 @@ shapeFieldUtil.connectShapes = {}
 
 -- set
 function shapeFieldUtil.connectShapes.set(config, field, value)
-  local res = isBoolean(value)
-  if res then
-    config.connectShapes = value
-    if value then
-      print("Coordinates will be reused between shapes.")
-    else
-      print("Coordinates are only used once.")
-    end
-  end
-  return res
+  return config:setConfigBoolean("connectShapes", value,
+      "Coordinates will be reused between shapes.",
+      "Coordinates are only used once.")
 end
 
 
@@ -1418,16 +1498,9 @@ sprayFieldUtil.keepOriginalCoord = {}
 
 -- set
 function sprayFieldUtil.keepOriginalCoord.set(config, field, value)
-  local res = isBoolean(value)
-  if res then
-    config.keepOriginalCoord = value
-    if value then
-      print("Original coordinates are kept in the pipeline.")
-    else
-      print("Original coordinates are removed from the pipeline.")
-    end
-  end
-  return res
+  return config:setConfigBoolean("keepOriginalCoord", value,
+      "Original coordinates are kept in the pipeline.",
+      "Original coordinates are removed from the pipeline.")
 end
 
 
@@ -1715,6 +1788,16 @@ mirrorFieldUtil[DefaultMirror.__name].help = [[
     ## Mirror Modification ##
     Actions are mirrored around one axis.
     
+    WARNING:
+        - The in-game brush is currently only symmetrical when using the smallest and second smallest
+          brush. The missing upper left tile on bigger brushes is not mirrored. Neither is the slightly
+          uneven form of the "hill" or "mountain" terrain tools.
+        - Terrain tools like the plateau tool might not mirror the terrain tiles properly.
+          The transformation itself is properly mirrored, but the computed terrain (stone, dirt) might
+          yield issues. This is a result of how the game handles the tiles after the transformation.
+          Be sure by painting the terrain afterwards.
+        - Objects with multiple rotations (rocks) are currently not rotated when mirrored.
+    
     Parameter                     Possible values
         active                        false, true
         mirrorMode / mode             "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
@@ -1979,6 +2062,16 @@ rotationFieldUtil[DefaultRotationMirror.__name].help = [[
     ## Rotation Mirroring ##
     Mirrors the actions around a defined center.
     The requested actions are evenly placed on a circle.
+    
+    WARNING:
+        - The in-game brush is currently only symmetrical when using the smallest and second smallest
+          brush. The missing upper left tile on bigger brushes is not mirrored. Neither is the slightly
+          uneven form of the "hill" or "mountain" terrain tools.
+        - Terrain tools like the plateau tool might not mirror the terrain tiles properly.
+          The transformation itself is properly mirrored, but the computed terrain (stone, dirt) might
+          yield issues. This is a result of how the game handles the tiles after the transformation.
+          Be sure by painting the terrain afterwards.
+        - Objects with multiple rotations (rocks) are currently not rotated when mirrored.
     
     Parameter                     Possible values
         active                        false, true
@@ -2387,16 +2480,8 @@ tracingFieldUtil.printTracingName = {}
 
 -- set
 function tracingFieldUtil.printTracingName.set(config, field, value)
-  local res = isBoolean(value)
-  if res then
-    config.printTracingName = value
-    if value then
-      print("Tracing name is printed.")
-    else
-      print("Tracing name is not printed.")
-    end
-  end
-  return res
+  return config:setConfigBoolean("printTracingName", value,
+      "Tracing name is printed.", "Tracing name is not printed.")
 end
 
 
@@ -2461,16 +2546,9 @@ tracingFieldUtil.printFirstCoord = {}
 
 -- set
 function tracingFieldUtil.printFirstCoord.set(config, field, value)
-  local res = isBoolean(value)
-  if res then
-    config.printFirstCoord = value
-    if value then
-      print("Prints the first received coordinate.")
-    else
-      print("Does not print the first received coordinate.")
-    end
-  end
-  return res
+  return config:setConfigBoolean("printFirstCoord", value,
+      "Prints the first received coordinate.",
+      "Does not print the first received coordinate.")
 end
 
 
@@ -2500,16 +2578,9 @@ tracingFieldUtil.printAllCoords = {}
 
 -- set
 function tracingFieldUtil.printAllCoords.set(config, field, value)
-  local res = isBoolean(value)
-  if res then
-    config.printAllCoords = value
-    if value then
-      print("Prints all received coordinates.")
-    else
-      print("Does not print the received coordinates.")
-    end
-  end
-  return res
+  return config:setConfigBoolean("printAllCoords", value,
+      "Prints all received coordinates.",
+      "Does not print the received coordinates.")
 end
 
 
@@ -2539,16 +2610,9 @@ tracingFieldUtil.printNumberOfCoords = {}
 
 -- set
 function tracingFieldUtil.printNumberOfCoords.set(config, field, value)
-  local res = isBoolean(value)
-  if res then
-    config.printNumberOfCoords = value
-    if value then
-      print("Prints number of all coordinates.")
-    else
-      print("Does not print number of all coordinates.")
-    end
-  end
-  return res
+  return config:setConfigBoolean("printNumberOfCoords", value,
+      "Prints number of all coordinates.",
+      "Does not print number of all coordinates.")
 end
 
 
@@ -2578,16 +2642,9 @@ tracingFieldUtil.printNumberOfDuplicates = {}
 
 -- set
 function tracingFieldUtil.printNumberOfDuplicates.set(config, field, value)
-  local res = isBoolean(value)
-  if res then
-    config.printNumberOfDuplicates = value
-    if value then
-      print("Prints number of noticed coordinate duplicates.")
-    else
-      print("Does not print number of noticed coordinate duplicates.")
-    end
-  end
-  return res
+  return config:setConfigBoolean("printNumberOfDuplicates", value,
+      "Prints number of noticed coordinate duplicates.",
+      "Does not print number of noticed coordinate duplicates.")
 end
 
 
@@ -2660,16 +2717,9 @@ tracingFieldUtil.devourCoords = {}
 
 -- set
 function tracingFieldUtil.devourCoords.set(config, field, value)
-  local res = isBoolean(value)
-  if res then
-    config.devourCoords = value
-    if value then
-      print("Received coordinates are removed.")
-    else
-      print("Received coordinates are passed on.")
-    end
-  end
-  return res
+  return config:setConfigBoolean("devourCoords", value,
+      "Received coordinates are removed.",
+      "Received coordinates are passed on.")
 end
 
 
@@ -2717,17 +2767,20 @@ tracingFieldUtil.devourCoords.help = [[
 HELP = [[
 
 This console is used to configure additional map editor features.
-(feature, parameter and value are dummy names)
+(feature, parameter, alias and value are dummy names)
 
-    feature()                           displays feature help text
-    feature("parameter")                displays parameter help text
-    feature("parameter", value)         assign a new value to a feature parameter
+    feature()                                       displays feature help text
+    feature("parameter")                            displays parameter help text
+    feature("parameter", value)                     assign a new value to a feature parameter
+
+    feature:createAlias("parameter", "alias")       set a parameter alias for the current session
+    feature:removeAlias("alias")                    remove a set parameter alias
 
 
 To get the current configurations you can use:
 
-    status                              get all parameters of the active features
-    return feature.parameter            get the value of one parameter
+    status                                          get all parameters of the active features
+    return feature.parameter                        get the value of one parameter
 
 
 The following features are implemented and currently applied in the order they are mentioned:
