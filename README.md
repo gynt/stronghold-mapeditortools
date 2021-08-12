@@ -17,6 +17,7 @@ When starting up the game, you will get your normal game window, and an extra co
 To modify the way mirroring is done or other drawing behaviors, modify the `shc-mapeditortools.lua` file.
 
 ## Copyright
+The dll of this project does not have a license. I am the copyright holder. You are free to use it, but not allowed to distribute it or modify it.
 ```
 Copyright Edward Gynt - All Rights Reserved
 Written by Edward Gynt <gynt@users.noreply.github.com>, March 2021
