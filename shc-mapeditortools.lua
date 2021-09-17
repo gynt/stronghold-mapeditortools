@@ -131,13 +131,23 @@ end
 --[[
   A simple rounding to full numbers function.
 
-  Note: 0.5 -> 1, but -0.5 -> 0
-  source: https://scriptinghelpers.org/questions/4850/how-do-i-round-numbers-in-lua-answered
-
   @TheRedDaemon
 ]]--
-local function round(x)
-  return x + 0.5 - (x + 0.5) % 1
+function round(x)
+  --[[
+    Round towards positive infinity: 0.5 -> 1, but -0.5 -> 0
+    source: https://scriptinghelpers.org/questions/4850/how-do-i-round-numbers-in-lua-answered
+  ]]--
+  --local modNum = 1
+  
+  --[[
+    Round towards positive and negative infinity: 0.5 -> 1 and -0.5 -> -1
+    source: https://love2d.org/forums/viewtopic.php?p=208676#p208676
+  ]]--
+  local modNum = x >= 0.0 and 1 or -1
+  
+  local n = x + 0.5 * modNum
+  return n - n % modNum
 end
 
 
