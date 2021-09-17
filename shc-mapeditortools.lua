@@ -1757,24 +1757,26 @@ local function applyMirror(config, coordlist, size)
   end
 
   -- @TheRedDaemon: Create mirroring function.
-  local invertPos = 400 - size
+  local translationX = config.mirrorCenterX - size / 2.0
+  local translationY = config.mirrorCenterY - size / 2.0
+  
   local mirrorFunc = nil
   if mirrorMode == "point" then
-    mirrorFunc = function(x, y) return {invertPos - x, invertPos - y} end
+    mirrorFunc = function(x, y) return translationX + translationX - x, translationY + translationY - y end
   elseif mirrorMode == "horizontal" then
-    mirrorFunc = function(x, y) return {invertPos - y, invertPos - x} end
+    mirrorFunc = function(x, y) return translationX + translationY - y, translationX + translationY - x end
   elseif mirrorMode == "vertical" then
-    mirrorFunc = function(x, y) return {y, x} end
+    mirrorFunc = function(x, y) return translationX - translationY + y, translationY - translationX + x end
   elseif mirrorMode == "diagonal_x" then
-    mirrorFunc = function(x, y) return {x, invertPos - y} end
+    mirrorFunc = function(x, y) return x, translationY + translationY - y end
   elseif mirrorMode == "diagonal_y" then
-    mirrorFunc = function(x, y) return {invertPos - x, y} end
+    mirrorFunc = function(x, y) return translationX + translationX - x, y end
   elseif mirrorMode == "quadrant_before" then
-    mirrorFunc = function(x, y) return {invertPos - y, x} end
+    mirrorFunc = function(x, y) return translationX + translationY - y, translationY - translationX + x end
   elseif mirrorMode == "quadrant_after" then
-    mirrorFunc = function(x, y) return {y, invertPos - x} end
+    mirrorFunc = function(x, y) return translationX - translationY + y, translationX + translationY - x end
   else -- @TheRedDaemon: Do nothing. Fails silently.
-    mirrorFunc = function(x, y) return {x, y} end
+    mirrorFunc = function(x, y) return x, y end
   end
 
   local coordOrder = config.coordOrder
@@ -1784,7 +1786,8 @@ local function applyMirror(config, coordlist, size)
     local index = 1
     for _, coord in ipairs(coordlist) do
       newCoordTable[index] = coord
-      newCoordTable[index + 1] = mirrorFunc(coord[1], coord[2])
+      local xPos, yPos = mirrorFunc(coord[1], coord[2])
+      newCoordTable[index + 1] = {round(xPos), round(yPos)}
       index = index + 2
     end
     coordlist = newCoordTable
@@ -1794,7 +1797,8 @@ local function applyMirror(config, coordlist, size)
     local numberOfCoords = #coordlist
     for index = 1, numberOfCoords do
       local coord = coordlist[index]
-      coordlist[numberOfCoords + index] = mirrorFunc(coord[1], coord[2])
+      local xPos, yPos = mirrorFunc(coord[1], coord[2])
+      coordlist[numberOfCoords + index] = {round(xPos), round(yPos)}
     end
   end -- no coordOrder fails silently
 
@@ -1815,11 +1819,13 @@ end
 
 
 local DefaultMirror = DefaultBase:new{
-  mirrorMode  =   "point"         ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
-                                      --                 "quadrant_before", "quadrant_after"
-  coordOrder  =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
+  mirrorMode    =   "point"         ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
+                                        --                 "quadrant_before", "quadrant_after"
+  mirrorCenterX =   200.0           ,   -- x-coordinate of the mirror center
+  mirrorCenterY =   200.0           ,   -- y-coordinate of the mirror center
+  coordOrder    =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
 
-  func        =   applyMirror     ,
+  func          =   applyMirror     ,
 
   __name = "Mirror Feature Configuration", -- debug info
 }
@@ -1876,6 +1882,8 @@ mirrorFieldUtil[DefaultMirror.__name].help = [[
         active                        false, true
         mirrorMode / mode             "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
                                           "quadrant_before", "quadrant_after", "none", "off"
+        mirrorCenterX / x             numbers
+        mirrorCenterY / y             numbers
         coordOrder / order            "shape", "coord"]]
 
 
@@ -1936,6 +1944,86 @@ mirrorFieldUtil.mirrorMode.help = [[
 
 -- alias
 mirrorFieldUtil.mode = mirrorFieldUtil.mirrorMode
+
+
+
+
+--[[   mirrorCenterX   ]]--
+
+
+
+-- table
+mirrorFieldUtil.mirrorCenterX = {}
+
+
+
+-- set
+function mirrorFieldUtil.mirrorCenterX.set(config, field, value)
+  local res = isNumber(value)
+  if res then
+    config.mirrorCenterX = value
+    print("Set x-coordinate of mirror center to: ", value)
+  end
+  return res
+end
+
+
+
+-- help
+mirrorFieldUtil.mirrorCenterX.help = [[
+
+    "mirrorCenterX", alias: "x"
+    The x-coordinate of the mirror center.
+    The map has a size of 400x400, with the center being at 200.
+
+        25.5, 200, 345, ...       numbers
+
+    Default: ]] .. tostring(DefaultMirror.mirrorCenterX)
+
+
+
+-- alias
+mirrorFieldUtil.x = mirrorFieldUtil.mirrorCenterX
+
+
+
+
+--[[   mirrorCenterY   ]]--
+
+
+
+-- table
+mirrorFieldUtil.mirrorCenterY = {}
+
+
+
+-- set
+function mirrorFieldUtil.mirrorCenterY.set(config, field, value)
+  local res = isNumber(value)
+  if res then
+    config.mirrorCenterY = value
+    print("Set y-coordinate of mirror center to: ", value)
+  end
+  return res
+end
+
+
+
+-- help
+mirrorFieldUtil.mirrorCenterY.help = [[
+
+    "mirrorCenterY", alias: "y"
+    The y-coordinate of the mirror center.
+    The map has a size of 400x400, with the center being at 200.
+
+        25.5, 200, 345, ...       numbers
+
+    Default: ]] .. tostring(DefaultMirror.mirrorCenterY)
+
+
+
+-- alias
+mirrorFieldUtil.y = mirrorFieldUtil.mirrorCenterY
 
 
 
