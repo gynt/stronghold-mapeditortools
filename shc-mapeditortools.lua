@@ -133,7 +133,7 @@ end
 
   @TheRedDaemon
 ]]--
-function round(x)
+local function round(x)
   --[[
     Round towards positive infinity: 0.5 -> 1, but -0.5 -> 0
     source: https://scriptinghelpers.org/questions/4850/how-do-i-round-numbers-in-lua-answered
@@ -2089,8 +2089,8 @@ end
 
 local DefaultRotationMirror = DefaultBase:new{
   numberOfPoints  =   2                   ,   -- how many points will be the result (mirrors = numberOfPoints - 1)
-  rotationCenterX =   200                 ,   -- x-coordinate of the rotation center
-  rotationCenterY =   200                 ,   -- y-coordinate of the rotation center
+  rotationCenterX =   200.0               ,   -- x-coordinate of the rotation center
+  rotationCenterY =   200.0               ,   -- y-coordinate of the rotation center
   coordOrder      =   "coord"             ,   -- order of coordinates after mirroring: "shape", "coord"
 
   func            =   applyRotationMirror ,
@@ -2150,8 +2150,8 @@ rotationFieldUtil[DefaultRotationMirror.__name].help = [[
     Parameter                     Possible values
         active                        false, true
         numberOfPoints / points       >= 1
-        rotationCenterX / x           whole numbers
-        rotationCenterY / y           whole numbers
+        rotationCenterX / x           numbers
+        rotationCenterY / y           numbers
         coordOrder / order            "shape", "coord"]]
 
 
@@ -2215,7 +2215,7 @@ rotationFieldUtil.rotationCenterX = {}
 
 -- set
 function rotationFieldUtil.rotationCenterX.set(config, field, value)
-  local res = isInteger(value)
+  local res = isNumber(value)
   if res then
     config.rotationCenterX = value
     print("Set x-coordinate of rotation center to: ", value)
@@ -2232,7 +2232,7 @@ rotationFieldUtil.rotationCenterX.help = [[
     The x-coordinate of the rotation center.
     The map has a size of 400x400, with the center being at 200.
 
-        25, 200, 345, ...         whole numbers
+        25.5, 200, 345, ...       numbers
 
     Default: ]] .. tostring(DefaultRotationMirror.rotationCenterX)
 
@@ -2255,7 +2255,7 @@ rotationFieldUtil.rotationCenterY = {}
 
 -- set
 function rotationFieldUtil.rotationCenterY.set(config, field, value)
-  local res = isInteger(value)
+  local res = isNumber(value)
   if res then
     config.rotationCenterY = value
     print("Set y-coordinate of rotation center to: ", value)
@@ -2272,7 +2272,7 @@ rotationFieldUtil.rotationCenterY.help = [[
     The y-coordinate of the rotation center.
     The map has a size of 400x400, with the center being at 200.
 
-        25, 200, 345, ...         whole numbers
+        25.5, 200, 345, ...       numbers
 
     Default: ]] .. tostring(DefaultRotationMirror.rotationCenterY)
 
