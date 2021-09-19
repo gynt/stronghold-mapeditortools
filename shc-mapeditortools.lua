@@ -1869,9 +1869,6 @@ mirrorFieldUtil[DefaultMirror.__name].help = [[
     Actions are mirrored around one axis.
 
     WARNING:
-        - The in-game brush is currently only symmetrical when using the smallest and second smallest
-          brush. The missing upper left tile on bigger brushes is not mirrored. Neither is the slightly
-          uneven part of the "hill" or "mountain" terrain tools.
         - Terrain tools like the plateau tool might not mirror the terrain tiles properly.
           The transformation itself is properly mirrored, but the computed terrain (stone, dirt) might
           yield issues. This is a result of how the game handles the tiles after the transformation.
@@ -2226,9 +2223,6 @@ rotationFieldUtil[DefaultRotationMirror.__name].help = [[
     The requested actions are evenly placed on a circle.
 
     WARNING:
-        - The in-game brush is currently only symmetrical when using the smallest and second smallest
-          brush. The missing upper left tile on bigger brushes is not mirrored. Neither is the slightly
-          uneven part of the "hill" or "mountain" terrain tools.
         - Terrain tools like the plateau tool might not mirror the terrain tiles properly.
           The transformation itself is properly mirrored, but the computed terrain (stone, dirt) might
           yield issues. This is a result of how the game handles the tiles after the transformation.
