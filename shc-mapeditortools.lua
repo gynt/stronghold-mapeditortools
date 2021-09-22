@@ -131,13 +131,23 @@ end
 --[[
   A simple rounding to full numbers function.
 
-  Note: 0.5 -> 1, but -0.5 -> 0
-  source: https://scriptinghelpers.org/questions/4850/how-do-i-round-numbers-in-lua-answered
-
   @TheRedDaemon
 ]]--
 local function round(x)
-  return x + 0.5 - (x + 0.5) % 1
+  --[[
+    Round towards positive infinity: 0.5 -> 1, but -0.5 -> 0
+    source: https://scriptinghelpers.org/questions/4850/how-do-i-round-numbers-in-lua-answered
+  ]]--
+  --local modNum = 1
+  
+  --[[
+    Round towards positive and negative infinity: 0.5 -> 1 and -0.5 -> -1
+    source: https://love2d.org/forums/viewtopic.php?p=208676#p208676
+  ]]--
+  local modNum = x >= 0.0 and 1 or -1
+  
+  local n = x + 0.5 * modNum
+  return n - n % modNum
 end
 
 
@@ -1747,24 +1757,26 @@ local function applyMirror(config, coordlist, size)
   end
 
   -- @TheRedDaemon: Create mirroring function.
-  local invertPos = 400 - size
+  local translationX = config.mirrorCenterX - size / 2.0
+  local translationY = config.mirrorCenterY - size / 2.0
+  
   local mirrorFunc = nil
   if mirrorMode == "point" then
-    mirrorFunc = function(x, y) return {invertPos - x, invertPos - y} end
+    mirrorFunc = function(x, y) return translationX + translationX - x, translationY + translationY - y end
   elseif mirrorMode == "horizontal" then
-    mirrorFunc = function(x, y) return {invertPos - y, invertPos - x} end
+    mirrorFunc = function(x, y) return translationX + translationY - y, translationX + translationY - x end
   elseif mirrorMode == "vertical" then
-    mirrorFunc = function(x, y) return {y, x} end
+    mirrorFunc = function(x, y) return translationX - translationY + y, translationY - translationX + x end
   elseif mirrorMode == "diagonal_x" then
-    mirrorFunc = function(x, y) return {x, invertPos - y} end
+    mirrorFunc = function(x, y) return x, translationY + translationY - y end
   elseif mirrorMode == "diagonal_y" then
-    mirrorFunc = function(x, y) return {invertPos - x, y} end
+    mirrorFunc = function(x, y) return translationX + translationX - x, y end
   elseif mirrorMode == "quadrant_before" then
-    mirrorFunc = function(x, y) return {invertPos - y, x} end
+    mirrorFunc = function(x, y) return translationX + translationY - y, translationY - translationX + x end
   elseif mirrorMode == "quadrant_after" then
-    mirrorFunc = function(x, y) return {y, invertPos - x} end
+    mirrorFunc = function(x, y) return translationX - translationY + y, translationX + translationY - x end
   else -- @TheRedDaemon: Do nothing. Fails silently.
-    mirrorFunc = function(x, y) return {x, y} end
+    mirrorFunc = function(x, y) return x, y end
   end
 
   local coordOrder = config.coordOrder
@@ -1774,7 +1786,8 @@ local function applyMirror(config, coordlist, size)
     local index = 1
     for _, coord in ipairs(coordlist) do
       newCoordTable[index] = coord
-      newCoordTable[index + 1] = mirrorFunc(coord[1], coord[2])
+      local xPos, yPos = mirrorFunc(coord[1], coord[2])
+      newCoordTable[index + 1] = {round(xPos), round(yPos)}
       index = index + 2
     end
     coordlist = newCoordTable
@@ -1784,7 +1797,8 @@ local function applyMirror(config, coordlist, size)
     local numberOfCoords = #coordlist
     for index = 1, numberOfCoords do
       local coord = coordlist[index]
-      coordlist[numberOfCoords + index] = mirrorFunc(coord[1], coord[2])
+      local xPos, yPos = mirrorFunc(coord[1], coord[2])
+      coordlist[numberOfCoords + index] = {round(xPos), round(yPos)}
     end
   end -- no coordOrder fails silently
 
@@ -1805,11 +1819,13 @@ end
 
 
 local DefaultMirror = DefaultBase:new{
-  mirrorMode  =   "point"         ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
-                                      --                 "quadrant_before", "quadrant_after"
-  coordOrder  =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
+  mirrorMode    =   "point"         ,   -- mirroring type: "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
+                                        --                 "quadrant_before", "quadrant_after"
+  mirrorCenterX =   200.0           ,   -- x-coordinate of the mirror center
+  mirrorCenterY =   200.0           ,   -- y-coordinate of the mirror center
+  coordOrder    =   "coord"         ,   -- order of coordinates after mirroring: "shape", "coord"
 
-  func        =   applyMirror     ,
+  func          =   applyMirror     ,
 
   __name = "Mirror Feature Configuration", -- debug info
 }
@@ -1853,9 +1869,6 @@ mirrorFieldUtil[DefaultMirror.__name].help = [[
     Actions are mirrored around one axis.
 
     WARNING:
-        - The in-game brush is currently only symmetrical when using the smallest and second smallest
-          brush. The missing upper left tile on bigger brushes is not mirrored. Neither is the slightly
-          uneven part of the "hill" or "mountain" terrain tools.
         - Terrain tools like the plateau tool might not mirror the terrain tiles properly.
           The transformation itself is properly mirrored, but the computed terrain (stone, dirt) might
           yield issues. This is a result of how the game handles the tiles after the transformation.
@@ -1866,6 +1879,8 @@ mirrorFieldUtil[DefaultMirror.__name].help = [[
         active                        false, true
         mirrorMode / mode             "horizontal", "vertical", "diagonal_x", "diagonal_y", "point",
                                           "quadrant_before", "quadrant_after", "none", "off"
+        mirrorCenterX / x             numbers
+        mirrorCenterY / y             numbers
         coordOrder / order            "shape", "coord"]]
 
 
@@ -1926,6 +1941,86 @@ mirrorFieldUtil.mirrorMode.help = [[
 
 -- alias
 mirrorFieldUtil.mode = mirrorFieldUtil.mirrorMode
+
+
+
+
+--[[   mirrorCenterX   ]]--
+
+
+
+-- table
+mirrorFieldUtil.mirrorCenterX = {}
+
+
+
+-- set
+function mirrorFieldUtil.mirrorCenterX.set(config, field, value)
+  local res = isNumber(value)
+  if res then
+    config.mirrorCenterX = value
+    print("Set x-coordinate of mirror center to: ", value)
+  end
+  return res
+end
+
+
+
+-- help
+mirrorFieldUtil.mirrorCenterX.help = [[
+
+    "mirrorCenterX", alias: "x"
+    The x-coordinate of the mirror center.
+    The map has a size of 400x400, with the center being at 200.
+
+        25.5, 200, 345, ...       numbers
+
+    Default: ]] .. tostring(DefaultMirror.mirrorCenterX)
+
+
+
+-- alias
+mirrorFieldUtil.x = mirrorFieldUtil.mirrorCenterX
+
+
+
+
+--[[   mirrorCenterY   ]]--
+
+
+
+-- table
+mirrorFieldUtil.mirrorCenterY = {}
+
+
+
+-- set
+function mirrorFieldUtil.mirrorCenterY.set(config, field, value)
+  local res = isNumber(value)
+  if res then
+    config.mirrorCenterY = value
+    print("Set y-coordinate of mirror center to: ", value)
+  end
+  return res
+end
+
+
+
+-- help
+mirrorFieldUtil.mirrorCenterY.help = [[
+
+    "mirrorCenterY", alias: "y"
+    The y-coordinate of the mirror center.
+    The map has a size of 400x400, with the center being at 200.
+
+        25.5, 200, 345, ...       numbers
+
+    Default: ]] .. tostring(DefaultMirror.mirrorCenterY)
+
+
+
+-- alias
+mirrorFieldUtil.y = mirrorFieldUtil.mirrorCenterY
 
 
 
@@ -2079,8 +2174,8 @@ end
 
 local DefaultRotationMirror = DefaultBase:new{
   numberOfPoints  =   2                   ,   -- how many points will be the result (mirrors = numberOfPoints - 1)
-  rotationCenterX =   200                 ,   -- x-coordinate of the rotation center
-  rotationCenterY =   200                 ,   -- y-coordinate of the rotation center
+  rotationCenterX =   200.0               ,   -- x-coordinate of the rotation center
+  rotationCenterY =   200.0               ,   -- y-coordinate of the rotation center
   coordOrder      =   "coord"             ,   -- order of coordinates after mirroring: "shape", "coord"
 
   func            =   applyRotationMirror ,
@@ -2128,9 +2223,6 @@ rotationFieldUtil[DefaultRotationMirror.__name].help = [[
     The requested actions are evenly placed on a circle.
 
     WARNING:
-        - The in-game brush is currently only symmetrical when using the smallest and second smallest
-          brush. The missing upper left tile on bigger brushes is not mirrored. Neither is the slightly
-          uneven part of the "hill" or "mountain" terrain tools.
         - Terrain tools like the plateau tool might not mirror the terrain tiles properly.
           The transformation itself is properly mirrored, but the computed terrain (stone, dirt) might
           yield issues. This is a result of how the game handles the tiles after the transformation.
@@ -2140,8 +2232,8 @@ rotationFieldUtil[DefaultRotationMirror.__name].help = [[
     Parameter                     Possible values
         active                        false, true
         numberOfPoints / points       >= 1
-        rotationCenterX / x           whole numbers
-        rotationCenterY / y           whole numbers
+        rotationCenterX / x           numbers
+        rotationCenterY / y           numbers
         coordOrder / order            "shape", "coord"]]
 
 
@@ -2205,7 +2297,7 @@ rotationFieldUtil.rotationCenterX = {}
 
 -- set
 function rotationFieldUtil.rotationCenterX.set(config, field, value)
-  local res = isInteger(value)
+  local res = isNumber(value)
   if res then
     config.rotationCenterX = value
     print("Set x-coordinate of rotation center to: ", value)
@@ -2222,7 +2314,7 @@ rotationFieldUtil.rotationCenterX.help = [[
     The x-coordinate of the rotation center.
     The map has a size of 400x400, with the center being at 200.
 
-        25, 200, 345, ...         whole numbers
+        25.5, 200, 345, ...       numbers
 
     Default: ]] .. tostring(DefaultRotationMirror.rotationCenterX)
 
@@ -2245,7 +2337,7 @@ rotationFieldUtil.rotationCenterY = {}
 
 -- set
 function rotationFieldUtil.rotationCenterY.set(config, field, value)
-  local res = isInteger(value)
+  local res = isNumber(value)
   if res then
     config.rotationCenterY = value
     print("Set y-coordinate of rotation center to: ", value)
@@ -2262,7 +2354,7 @@ rotationFieldUtil.rotationCenterY.help = [[
     The y-coordinate of the rotation center.
     The map has a size of 400x400, with the center being at 200.
 
-        25, 200, 345, ...         whole numbers
+        25.5, 200, 345, ...       numbers
 
     Default: ]] .. tostring(DefaultRotationMirror.rotationCenterY)
 
